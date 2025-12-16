@@ -16,6 +16,7 @@
     "dev": "tsx src/index.ts",
     "dev:bun": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
+    "publish-package": "tsx scripts/publish.ts",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
