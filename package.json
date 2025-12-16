@@ -1,0 +1,53 @@
+{
+  "name": "x402scan-mcp",
+  "version": "0.0.1",
+  "description": "Generic MCP server for calling x402-protected APIs with automatic payment handling",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "x402scan-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "build:mcpb": "tsx scripts/build-mcpb.ts",
+    "dev": "tsx src/index.ts",
+    "dev:bun": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "@x402/core": "^2.0.0",
+    "@x402/evm": "^2.0.0",
+    "viem": "^2.31.3",
+    "zod": "^3.25.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "mcp",
+    "x402",
+    "payments",
+    "ai",
+    "claude",
+    "model-context-protocol"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/merit-systems/x402scan-mcp"
+  }
+}
