@@ -13,6 +13,8 @@ import { registerCheckBalanceTool } from './tools/check_balance.js';
 import { registerQueryEndpointTool } from './tools/query_endpoint.js';
 import { registerValidatePaymentTool } from './tools/validate_payment.js';
 import { registerExecuteCallTool } from './tools/execute_call.js';
+import { registerCreateSiweProofTool } from './tools/siwe.js';
+import { registerFetchWithSiweTool } from './tools/fetch_with_siwe.js';
 import { log } from './utils/logger.js';
 
 async function main() {
@@ -30,8 +32,10 @@ async function main() {
   registerQueryEndpointTool(server);
   registerValidatePaymentTool(server);
   registerExecuteCallTool(server);
+  registerCreateSiweProofTool(server);
+  registerFetchWithSiweTool(server);
 
-  log.info('Registered 4 tools: check_balance, query_endpoint, validate_payment, execute_call');
+  log.info('Registered 6 tools: check_balance, query_endpoint, validate_payment, execute_call, create_siwe_proof, fetch_with_siwe');
 
   // Connect to stdio transport
   const transport = new StdioServerTransport();
