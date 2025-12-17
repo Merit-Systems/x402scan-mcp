@@ -17,6 +17,11 @@ import type {
 } from '@x402/core/types';
 import { log, logPaymentRequired, logSignature, logSettlement } from '../utils/logger.js';
 import { toCaip2 } from '../utils/networks.js';
+import {
+  normalizePaymentRequired,
+  type NormalizedPaymentRequired,
+  type NormalizedRequirement,
+} from './normalize.js';
 
 // Re-export types from @x402/core for convenience
 export type {
@@ -25,6 +30,9 @@ export type {
   SettleResponse,
   PaymentRequirements,
 } from '@x402/core/types';
+
+// Re-export normalized types for downstream use
+export type { NormalizedPaymentRequired, NormalizedRequirement } from './normalize.js';
 
 export interface X402ClientConfig {
   account: PrivateKeyAccount;
@@ -40,7 +48,7 @@ export interface RequestResult<T = unknown> {
     network: string;
     payer: string;
   };
-  paymentRequired?: PaymentRequired;
+  paymentRequired?: NormalizedPaymentRequired;
   error?: {
     phase: 'initial_request' | 'parse_requirements' | 'create_signature' | 'paid_request' | 'settlement';
     message: string;
@@ -154,7 +162,8 @@ export async function makeX402Request<T = unknown>(
   // Phase 2: Parse payment requirements
   log.debug('Got 402 Payment Required, parsing requirements...');
 
-  let paymentRequired: PaymentRequired;
+  let rawPaymentRequired: PaymentRequired;
+  let paymentRequired: NormalizedPaymentRequired;
   let responseBody: unknown;
   try {
     // Try to get body for v1 compatibility
@@ -164,11 +173,13 @@ export async function makeX402Request<T = unknown>(
       responseBody = undefined;
     }
 
-    paymentRequired = httpClient.getPaymentRequiredResponse(
+    rawPaymentRequired = httpClient.getPaymentRequiredResponse(
       (name) => firstResponse.headers.get(name),
       responseBody
     );
-    logPaymentRequired(paymentRequired);
+    // Normalize v1/v2 responses to consistent format
+    paymentRequired = normalizePaymentRequired(rawPaymentRequired);
+    logPaymentRequired(rawPaymentRequired);
   } catch (err) {
     return {
       success: false,
@@ -189,7 +200,8 @@ export async function makeX402Request<T = unknown>(
 
   let paymentPayload: PaymentPayload;
   try {
-    paymentPayload = await httpClient.createPaymentPayload(paymentRequired);
+    // Use raw (non-normalized) payment requirements for @x402/core SDK
+    paymentPayload = await httpClient.createPaymentPayload(rawPaymentRequired);
     log.debug(`Payment created for network: ${paymentPayload.accepted?.network}`);
   } catch (err) {
     return {
@@ -300,7 +312,7 @@ export async function queryEndpoint(
   success: boolean;
   statusCode: number;
   x402Version?: number;
-  paymentRequired?: PaymentRequired;
+  paymentRequired?: NormalizedPaymentRequired;
   error?: string;
   parseErrors?: string[];
   rawHeaders?: Record<string, string>;
@@ -347,10 +359,12 @@ export async function queryEndpoint(
 
   // Parse payment requirements
   try {
-    const paymentRequired = httpClient.getPaymentRequiredResponse(
+    const rawPaymentRequired = httpClient.getPaymentRequiredResponse(
       (name) => response.headers.get(name),
       rawBody
     );
+    // Normalize v1/v2 responses to consistent format
+    const paymentRequired = normalizePaymentRequired(rawPaymentRequired);
 
     return {
       success: true,

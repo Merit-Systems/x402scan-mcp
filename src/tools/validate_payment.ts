@@ -12,15 +12,26 @@ import { hasSufficientBalance, getUSDCBalance } from '../balance/usdc.js';
 import { mcpSuccess, mcpError, formatUSDC } from '../utils/helpers.js';
 import { getChainConfig, getChainName, toCaip2 } from '../utils/networks.js';
 
-const PaymentRequirementsSchema = z.object({
-  scheme: z.string(),
-  network: z.string(),
-  amount: z.string(),
-  asset: z.string(),
-  payTo: z.string(),
-  maxTimeoutSeconds: z.number(),
-  extra: z.record(z.unknown()).optional(),
-});
+// Schema accepts both v1 (maxAmountRequired) and v2 (amount) field names
+const PaymentRequirementsSchema = z
+  .object({
+    scheme: z.string(),
+    network: z.string(),
+    amount: z.string().optional(), // v2 field name
+    maxAmountRequired: z.string().optional(), // v1 field name
+    asset: z.string(),
+    payTo: z.string(),
+    maxTimeoutSeconds: z.number(),
+    extra: z.record(z.unknown()).optional(),
+  })
+  .refine((data) => data.amount || data.maxAmountRequired, {
+    message: 'Either amount (v2) or maxAmountRequired (v1) must be provided',
+  })
+  .transform((data) => ({
+    ...data,
+    // Normalize to 'amount' internally
+    amount: data.amount ?? data.maxAmountRequired!,
+  }));
 
 export function registerValidatePaymentTool(server: McpServer): void {
   server.tool(
