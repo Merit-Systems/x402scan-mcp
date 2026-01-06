@@ -9,10 +9,11 @@ import { getUSDCBalance } from '../balance';
 import { DEFAULT_NETWORK, getChainName, getExplorerUrl, getUSDCAddress, isTestnet } from '../networks';
 
 export function registerWalletTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     'check_balance',
-    'Check wallet address and USDC balance. Creates wallet if needed.',
-    {},
+    {
+      description: 'Check wallet address and USDC balance. Creates wallet if needed.',
+    },
     async () => {
       try {
         const { address, isNew } = await getWallet();

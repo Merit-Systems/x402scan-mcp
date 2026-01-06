@@ -10,15 +10,17 @@ import { createProof, siweToCaip2, SIWE_NETWORKS } from '../siwe';
 
 export function registerAuthTools(server: McpServer): void {
   // create_siwe_proof - create CAIP-122 compliant proof
-  server.tool(
+  server.registerTool(
     'create_siwe_proof',
-    'Create a CAIP-122 compliant Sign-In-With-X proof for wallet authentication.',
     {
-      domain: z.string().describe('Domain requesting auth (e.g., "api.example.com")'),
-      uri: z.string().url().describe('Full URI of the resource'),
-      statement: z.string().optional().default('Authenticate to API'),
-      network: z.enum(SIWE_NETWORKS).optional().default('base'),
-      expirationMinutes: z.number().optional().default(5),
+      description: 'Create a CAIP-122 compliant Sign-In-With-X proof for wallet authentication.',
+      inputSchema: {
+        domain: z.string().describe('Domain requesting auth (e.g., "api.example.com")'),
+        uri: z.string().url().describe('Full URI of the resource'),
+        statement: z.string().optional().default('Authenticate to API'),
+        network: z.enum(SIWE_NETWORKS).optional().default('base'),
+        expirationMinutes: z.number().optional().default(5),
+      },
     },
     async ({ domain, uri, statement, network, expirationMinutes }) => {
       try {
@@ -46,15 +48,17 @@ export function registerAuthTools(server: McpServer): void {
   );
 
   // fetch_with_siwe - HTTP fetch with automatic SIWE auth
-  server.tool(
+  server.registerTool(
     'fetch_with_siwe',
-    'Make an HTTP request with automatic CAIP-122 Sign-In-With-X wallet authentication.',
     {
-      url: z.string().url().describe('The URL to fetch'),
-      method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).optional().default('GET'),
-      body: z.unknown().optional().describe('Request body for POST/PUT/PATCH'),
-      headers: z.record(z.string()).optional().describe('Additional headers'),
-      network: z.enum(SIWE_NETWORKS).optional().default('base'),
+      description: 'Make an HTTP request with automatic CAIP-122 Sign-In-With-X wallet authentication.',
+      inputSchema: {
+        url: z.string().url().describe('The URL to fetch'),
+        method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).optional().default('GET'),
+        body: z.unknown().optional().describe('Request body for POST/PUT/PATCH'),
+        headers: z.record(z.string()).optional().describe('Additional headers'),
+        network: z.enum(SIWE_NETWORKS).optional().default('base'),
+      },
     },
     async ({ url, method, body, headers, network }) => {
       try {

@@ -33,13 +33,15 @@ const PaymentRequirementsSchema = z
 
 export function registerPaymentTools(server: McpServer): void {
   // query_endpoint - probe for pricing without payment
-  server.tool(
+  server.registerTool(
     'query_endpoint',
-    'Probe an x402-protected endpoint to get pricing and requirements without payment.',
     {
-      url: z.string().url().describe('The endpoint URL to probe'),
-      method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).default('GET'),
-      body: z.unknown().optional().describe('Request body for POST/PUT/PATCH'),
+      description: 'Probe an x402-protected endpoint to get pricing and requirements without payment.',
+      inputSchema: {
+        url: z.string().url().describe('The endpoint URL to probe'),
+        method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).default('GET'),
+        body: z.unknown().optional().describe('Request body for POST/PUT/PATCH'),
+      },
     },
     async ({ url, method, body }) => {
       try {
@@ -135,11 +137,13 @@ export function registerPaymentTools(server: McpServer): void {
   );
 
   // validate_payment - pre-flight check
-  server.tool(
+  server.registerTool(
     'validate_payment',
-    'Pre-flight check if a payment would succeed. Validates wallet, network, and balance.',
     {
-      requirements: PaymentRequirementsSchema.describe('Payment requirements from query_endpoint'),
+      description: 'Pre-flight check if a payment would succeed. Validates wallet, network, and balance.',
+      inputSchema: {
+        requirements: PaymentRequirementsSchema.describe('Payment requirements from query_endpoint'),
+      },
     },
     async ({ requirements }) => {
       try {
@@ -228,14 +232,16 @@ export function registerPaymentTools(server: McpServer): void {
   );
 
   // execute_call - make paid request
-  server.tool(
+  server.registerTool(
     'execute_call',
-    'Make a paid request to an x402-protected endpoint. Handles 402 payment flow automatically.',
     {
-      url: z.string().url().describe('The endpoint URL'),
-      method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).default('GET'),
-      body: z.unknown().optional().describe('Request body for POST/PUT/PATCH'),
-      headers: z.record(z.string()).optional().describe('Additional headers'),
+      description: 'Make a paid request to an x402-protected endpoint. Handles 402 payment flow automatically.',
+      inputSchema: {
+        url: z.string().url().describe('The endpoint URL'),
+        method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).default('GET'),
+        body: z.unknown().optional().describe('Request body for POST/PUT/PATCH'),
+        headers: z.record(z.string()).optional().describe('Additional headers'),
+      },
     },
     async ({ url, method, body, headers }) => {
       try {
