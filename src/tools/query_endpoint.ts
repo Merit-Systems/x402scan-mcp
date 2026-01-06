@@ -15,8 +15,50 @@ import { randomBytes } from 'crypto';
 import { queryEndpoint } from '../x402/client.js';
 import { mcpSuccess, mcpError, formatUSDC } from '../utils/helpers.js';
 import { getChainName, toCaip2 } from '../utils/networks.js';
-import { extractDiscoveryInfoV1, isDiscoverableV1 } from '@x402/extensions/bazaar';
-import type { PaymentRequirementsV1 } from '@x402/core/types';
+
+// V1 outputSchema extraction (inline to avoid @x402/extensions ESM/ajv issue)
+interface V1OutputSchema {
+  input: {
+    type: string;
+    method: string;
+    discoverable?: boolean;
+    queryParams?: Record<string, unknown>;
+    body?: Record<string, unknown>;
+    bodyFields?: Record<string, unknown>;
+    headers?: Record<string, string>;
+  };
+  output?: Record<string, unknown>;
+}
+
+interface V1Accept {
+  outputSchema?: V1OutputSchema;
+}
+
+function extractV1DiscoveryInfo(accept: V1Accept): Record<string, unknown> | null {
+  const schema = accept.outputSchema;
+  if (!schema?.input || schema.input.type !== 'http' || !schema.input.method) {
+    return null;
+  }
+  if (schema.input.discoverable === false) {
+    return null;
+  }
+
+  const method = schema.input.method.toUpperCase();
+  const isBodyMethod = ['POST', 'PUT', 'PATCH'].includes(method);
+
+  return {
+    input: {
+      type: 'http',
+      method,
+      ...(schema.input.queryParams ? { queryParams: schema.input.queryParams } : {}),
+      ...(isBodyMethod && (schema.input.body || schema.input.bodyFields)
+        ? { bodyType: 'json', body: schema.input.body || schema.input.bodyFields }
+        : {}),
+      ...(schema.input.headers ? { headers: schema.input.headers } : {}),
+    },
+    ...(schema.output ? { output: { type: 'json', example: schema.output } } : {}),
+  };
+}
 
 export function registerQueryEndpointTool(server: McpServer): void {
   server.tool(
@@ -103,12 +145,12 @@ export function registerQueryEndpointTool(server: McpServer): void {
             hasBazaarExtension: true,
           };
         } else if (pr.x402Version === 1 && result.rawBody) {
-          // V1 - extract from outputSchema using @x402/extensions utility
-          const v1Body = result.rawBody as { accepts?: PaymentRequirementsV1[] };
+          // V1 - extract from outputSchema
+          const v1Body = result.rawBody as { accepts?: V1Accept[] };
           const firstAccept = v1Body.accepts?.[0];
 
-          if (firstAccept && isDiscoverableV1(firstAccept)) {
-            const discoveryInfo = extractDiscoveryInfoV1(firstAccept);
+          if (firstAccept) {
+            const discoveryInfo = extractV1DiscoveryInfo(firstAccept);
             if (discoveryInfo) {
               response.bazaar = {
                 info: discoveryInfo,
