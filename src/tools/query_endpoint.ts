@@ -15,6 +15,8 @@ import { randomBytes } from 'crypto';
 import { queryEndpoint } from '../x402/client.js';
 import { mcpSuccess, mcpError, formatUSDC } from '../utils/helpers.js';
 import { getChainName, toCaip2 } from '../utils/networks.js';
+import { extractDiscoveryInfoV1, isDiscoverableV1 } from '@x402/extensions/bazaar';
+import type { PaymentRequirementsV1 } from '@x402/core/types';
 
 export function registerQueryEndpointTool(server: McpServer): void {
   server.tool(
@@ -91,7 +93,7 @@ export function registerQueryEndpointTool(server: McpServer): void {
           };
         }
 
-        // Add Bazaar extension if present
+        // Add Bazaar extension if present (V2)
         if (pr.extensions?.bazaar) {
           const bazaar = pr.extensions.bazaar as Record<string, unknown>;
           response.bazaar = {
@@ -100,6 +102,22 @@ export function registerQueryEndpointTool(server: McpServer): void {
             examples: bazaar.examples,
             hasBazaarExtension: true,
           };
+        } else if (pr.x402Version === 1 && result.rawBody) {
+          // V1 - extract from outputSchema using @x402/extensions utility
+          const v1Body = result.rawBody as { accepts?: PaymentRequirementsV1[] };
+          const firstAccept = v1Body.accepts?.[0];
+
+          if (firstAccept && isDiscoverableV1(firstAccept)) {
+            const discoveryInfo = extractDiscoveryInfoV1(firstAccept);
+            if (discoveryInfo) {
+              response.bazaar = {
+                info: discoveryInfo,
+                schema: null,
+                hasBazaarExtension: true,
+                sourceVersion: 1,
+              };
+            }
+          }
         }
 
         // Add Sign-In-With-X extension if present (x402 v2)
