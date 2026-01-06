@@ -1,7 +1,7 @@
 /**
- * Fetch with SIWE authentication tool
+ * Fetch with Sign-In-With-X authentication tool
  *
- * Makes HTTP requests with automatic SIWE wallet authentication.
+ * Makes HTTP requests with automatic CAIP-122 compliant wallet authentication.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -11,40 +11,63 @@ import { getOrCreateWallet } from '../wallet/manager.js';
 import { mcpSuccess, mcpError } from '../utils/helpers.js';
 import type { PrivateKeyAccount } from 'viem/accounts';
 
-// Common chain IDs for reference
-const CHAIN_IDS = {
-  mainnet: 1,
-  base: 8453,
-  'base-sepolia': 84532,
-  optimism: 10,
-  arbitrum: 42161,
-  polygon: 137,
-  sepolia: 11155111,
+// CAIP-2 network identifiers
+const NETWORKS = {
+  mainnet: 'eip155:1',
+  base: 'eip155:8453',
+  'base-sepolia': 'eip155:84532',
+  optimism: 'eip155:10',
+  arbitrum: 'eip155:42161',
+  polygon: 'eip155:137',
+  sepolia: 'eip155:11155111',
 } as const;
 
-async function createSiweProof(
+type NetworkName = keyof typeof NETWORKS;
+
+function parseChainId(network: string): number {
+  const parts = network.split(':');
+  return parseInt(parts[1], 10);
+}
+
+async function createSiwxProof(
   account: PrivateKeyAccount,
   domain: string,
   uri: string,
-  chainId: number
+  network: string
 ): Promise<string> {
+  const numericChainId = parseChainId(network);
+  const nonce = generateNonce();
+  const issuedAt = new Date().toISOString();
+  const expirationTime = new Date(Date.now() + 300000).toISOString(); // 5 min
+
   const siweMessage = new SiweMessage({
     domain,
     address: account.address,
     statement: 'Authenticate to API',
     uri,
     version: '1',
-    chainId,
-    nonce: generateNonce(),
-    issuedAt: new Date().toISOString(),
-    expirationTime: new Date(Date.now() + 3600000).toISOString(),
+    chainId: numericChainId,
+    nonce,
+    issuedAt,
+    expirationTime,
+    resources: [uri],
   });
 
   const message = siweMessage.prepareMessage();
   const signature = await account.signMessage({ message });
 
+  // Flat CAIP-122 compliant payload
   return JSON.stringify({
-    message: JSON.stringify(siweMessage),
+    domain,
+    address: account.address,
+    statement: 'Authenticate to API',
+    uri,
+    version: '1',
+    chainId: network,
+    nonce,
+    issuedAt,
+    expirationTime,
+    resources: [uri],
     signature,
   });
 }
@@ -52,7 +75,7 @@ async function createSiweProof(
 export function registerFetchWithSiweTool(server: McpServer): void {
   server.tool(
     'fetch_with_siwe',
-    'Make an HTTP request with automatic SIWE wallet authentication. Useful for APIs that require wallet ownership proof.',
+    'Make an HTTP request with automatic CAIP-122 Sign-In-With-X wallet authentication (x402 v2 extension).',
     {
       url: z.string().url().describe('The URL to fetch'),
       method: z
@@ -64,44 +87,30 @@ export function registerFetchWithSiweTool(server: McpServer): void {
         .record(z.string())
         .optional()
         .describe('Additional headers'),
-      siweHeader: z
-        .string()
-        .optional()
-        .default('X-SIWE-PROOF')
-        .describe('Header name for SIWE proof'),
-      chainId: z
-        .number()
-        .optional()
-        .describe(
-          'Chain ID for SIWE proof (default: 8453 for Base). Common IDs: 1=mainnet, 8453=base, 84532=base-sepolia'
-        ),
-      chain: z
+      network: z
         .enum(['mainnet', 'base', 'base-sepolia', 'optimism', 'arbitrum', 'polygon', 'sepolia'])
         .optional()
-        .describe('Chain name (alternative to chainId). Default: base'),
+        .default('base')
+        .describe('Network name (default: base)'),
     },
-    async ({ url, method, body, headers, siweHeader, chainId, chain }) => {
+    async ({ url, method, body, headers, network }) => {
       try {
         const { account } = await getOrCreateWallet();
         const parsedUrl = new URL(url);
+        const caip2Network = NETWORKS[network as NetworkName];
 
-        // Resolve chain ID: explicit chainId > chain name > default (base)
-        const resolvedChainId = chainId ?? (chain ? CHAIN_IDS[chain] : CHAIN_IDS.base);
-
-        // Create SIWE proof
-        const proof = await createSiweProof(
+        const proof = await createSiwxProof(
           account,
           parsedUrl.host,
           parsedUrl.origin,
-          resolvedChainId
+          caip2Network
         );
 
-        // Make request with SIWE header
         const response = await fetch(url, {
           method,
           headers: {
             'Content-Type': 'application/json',
-            [siweHeader]: proof,
+            'SIGN-IN-WITH-X': proof,
             ...headers,
           },
           body: body ? JSON.stringify(body) : undefined,

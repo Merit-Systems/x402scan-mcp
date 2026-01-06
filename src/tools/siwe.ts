@@ -1,7 +1,7 @@
 /**
- * SIWE (Sign-In with Ethereum) proof tool
+ * Sign-In-With-X (SIWx) proof tool
  *
- * Creates SIWE proofs for wallet authentication with any API.
+ * Creates CAIP-122 compliant proofs for wallet authentication.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -10,58 +10,62 @@ import { SiweMessage, generateNonce } from 'siwe';
 import { getOrCreateWallet } from '../wallet/manager.js';
 import { mcpSuccess, mcpError } from '../utils/helpers.js';
 
-// Common chain IDs for reference
-const CHAIN_IDS = {
-  mainnet: 1,
-  base: 8453,
-  'base-sepolia': 84532,
-  optimism: 10,
-  arbitrum: 42161,
-  polygon: 137,
-  sepolia: 11155111,
+// CAIP-2 network identifiers
+const NETWORKS = {
+  mainnet: 'eip155:1',
+  base: 'eip155:8453',
+  'base-sepolia': 'eip155:84532',
+  optimism: 'eip155:10',
+  arbitrum: 'eip155:42161',
+  polygon: 'eip155:137',
+  sepolia: 'eip155:11155111',
 } as const;
+
+type NetworkName = keyof typeof NETWORKS;
+
+function parseChainId(network: string): number {
+  const parts = network.split(':');
+  return parseInt(parts[1], 10);
+}
 
 export function registerCreateSiweProofTool(server: McpServer): void {
   server.tool(
     'create_siwe_proof',
-    'Create a SIWE (Sign-In with Ethereum) proof for wallet authentication. Returns a proof string to use in X-SIWE-PROOF header.',
+    'Create a CAIP-122 compliant Sign-In-With-X proof for wallet authentication (x402 v2 extension). Returns a flat proof object for the SIGN-IN-WITH-X header.',
     {
       domain: z
         .string()
-        .describe(
-          'Domain requesting auth (e.g., "localhost:3000" or "stablestudio.io")'
-        ),
+        .describe('Domain requesting auth (e.g., "api.example.com")'),
       uri: z
         .string()
         .url()
-        .describe('Full URI of the API (e.g., "http://localhost:3000")'),
+        .describe('Full URI of the resource (e.g., "https://api.example.com")'),
       statement: z
         .string()
         .optional()
         .default('Authenticate to API')
         .describe('Human-readable statement'),
-      chainId: z
-        .number()
-        .optional()
-        .describe(
-          'Chain ID (default: 8453 for Base). Common IDs: 1=mainnet, 8453=base, 84532=base-sepolia, 10=optimism'
-        ),
-      chain: z
+      network: z
         .enum(['mainnet', 'base', 'base-sepolia', 'optimism', 'arbitrum', 'polygon', 'sepolia'])
         .optional()
-        .describe('Chain name (alternative to chainId). Default: base'),
+        .default('base')
+        .describe('Network name (default: base)'),
       expirationMinutes: z
         .number()
         .optional()
-        .default(60)
-        .describe('Proof validity in minutes'),
+        .default(5)
+        .describe('Proof validity in minutes (default: 5)'),
     },
-    async ({ domain, uri, statement, chainId, chain, expirationMinutes }) => {
+    async ({ domain, uri, statement, network, expirationMinutes }) => {
       try {
         const { account, address } = await getOrCreateWallet();
-
-        // Resolve chain ID: explicit chainId > chain name > default (base)
-        const resolvedChainId = chainId ?? (chain ? CHAIN_IDS[chain] : CHAIN_IDS.base);
+        const caip2Network = NETWORKS[network as NetworkName];
+        const numericChainId = parseChainId(caip2Network);
+        const nonce = generateNonce();
+        const issuedAt = new Date().toISOString();
+        const expirationTime = new Date(
+          Date.now() + expirationMinutes * 60 * 1000
+        ).toISOString();
 
         const siweMessage = new SiweMessage({
           domain,
@@ -69,28 +73,37 @@ export function registerCreateSiweProofTool(server: McpServer): void {
           statement,
           uri,
           version: '1',
-          chainId: resolvedChainId,
-          nonce: generateNonce(),
-          issuedAt: new Date().toISOString(),
-          expirationTime: new Date(
-            Date.now() + expirationMinutes * 60 * 1000
-          ).toISOString(),
+          chainId: numericChainId,
+          nonce,
+          issuedAt,
+          expirationTime,
+          resources: [uri],
         });
 
         const message = siweMessage.prepareMessage();
         const signature = await account.signMessage({ message });
 
-        const proof = JSON.stringify({
-          message: JSON.stringify(siweMessage),
+        // Flat CAIP-122 compliant payload
+        const proof = {
+          domain,
+          address,
+          statement,
+          uri,
+          version: '1',
+          chainId: caip2Network,
+          nonce,
+          issuedAt,
+          expirationTime,
+          resources: [uri],
           signature,
-        });
+        };
 
         return mcpSuccess({
-          proof,
+          proof: JSON.stringify(proof),
           address,
-          chainId: resolvedChainId,
-          expiresAt: siweMessage.expirationTime,
-          usage: 'Add to request headers as: X-SIWE-PROOF: <proof>',
+          network: caip2Network,
+          expiresAt: expirationTime,
+          usage: 'Add to request headers as: SIGN-IN-WITH-X: <proof>',
         });
       } catch (err) {
         return mcpError(err, { tool: 'create_siwe_proof' });

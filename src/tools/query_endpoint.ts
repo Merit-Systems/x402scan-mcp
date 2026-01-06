@@ -19,7 +19,7 @@ import { getChainName, toCaip2 } from '../utils/networks.js';
 export function registerQueryEndpointTool(server: McpServer): void {
   server.tool(
     'query_endpoint',
-    'Probe an x402-protected endpoint to get pricing and schema without making a payment. Returns payment requirements, accepted networks, and Bazaar schema if available.',
+    'Probe an x402-protected endpoint to get pricing and requirements without payment. Returns payment options, Bazaar schema, and Sign-In-With-X auth requirements (x402 v2) if available.',
     {
       url: z.string().url().describe('The x402-protected endpoint URL to probe'),
       method: z
@@ -99,6 +99,39 @@ export function registerQueryEndpointTool(server: McpServer): void {
             schema: bazaar.schema,
             examples: bazaar.examples,
             hasBazaarExtension: true,
+          };
+        }
+
+        // Add Sign-In-With-X extension if present (x402 v2)
+        if (pr.extensions?.['sign-in-with-x']) {
+          const siwx = pr.extensions['sign-in-with-x'] as {
+            info?: Record<string, unknown>;
+            schema?: Record<string, unknown>;
+          };
+
+          // Validate required fields per CAIP-122 / x402 v2 spec
+          const info = siwx.info || {};
+          const requiredFields = ['domain', 'uri', 'version', 'chainId', 'nonce', 'issuedAt'];
+          const missingFields = requiredFields.filter((f) => !info[f]);
+          const validationErrors: string[] = [];
+
+          if (!siwx.info) {
+            validationErrors.push('Missing "info" object in sign-in-with-x extension');
+          } else if (missingFields.length > 0) {
+            validationErrors.push(`Missing required fields in info: ${missingFields.join(', ')}`);
+          }
+
+          if (!siwx.schema) {
+            validationErrors.push('Missing "schema" object in sign-in-with-x extension');
+          }
+
+          response.signInWithX = {
+            required: true,
+            valid: validationErrors.length === 0,
+            validationErrors: validationErrors.length > 0 ? validationErrors : undefined,
+            info: siwx.info,
+            schema: siwx.schema,
+            usage: 'Use create_siwe_proof or fetch_with_siwe tools to authenticate',
           };
         }
 
