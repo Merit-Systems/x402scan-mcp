@@ -66,5 +66,16 @@ export async function getWallet(): Promise<Wallet> {
   return { account, address: account.address, isNew: true };
 }
 
+/** Check if wallet exists without creating one */
+export async function walletExists(): Promise<boolean> {
+  if (process.env.X402_PRIVATE_KEY) return true;
+  try {
+    await fs.access(KEYSTORE_FILE);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const keystorePath = KEYSTORE_FILE;
 export const keystoreDir = KEYSTORE_DIR;

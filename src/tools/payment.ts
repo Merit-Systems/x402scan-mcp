@@ -5,7 +5,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { mcpSuccess, mcpError, formatUSDC } from '../response';
-import { getWallet } from '../keystore';
+import { getWallet, walletExists } from '../keystore';
 import { createClient, makeRequest, queryEndpoint, type QueryResult } from '../x402/client';
 import { extractV1Schema } from '../x402/protocol';
 import { getChainConfig, getChainName, toCaip2 } from '../networks';
@@ -147,6 +147,13 @@ export function registerPaymentTools(server: McpServer): void {
         const warnings: string[] = [];
         const checks: Record<string, boolean> = {};
 
+        // Check wallet exists (without creating)
+        const hasWallet = await walletExists();
+        checks.walletExists = hasWallet;
+        if (!hasWallet) {
+          errors.push('No wallet found. Run check_balance first to create a wallet.');
+        }
+
         // Check network support
         const caip2 = toCaip2(requirements.network);
         const chainConfig = getChainConfig(caip2);
@@ -161,21 +168,13 @@ export function registerPaymentTools(server: McpServer): void {
           errors.push(`Scheme not supported: ${requirements.scheme}. Only 'exact' is supported.`);
         }
 
-        // Get wallet
-        let address: `0x${string}`;
-        try {
-          const wallet = await getWallet();
-          address = wallet.address;
-          checks.walletExists = true;
-        } catch {
-          checks.walletExists = false;
-          errors.push('No wallet found. Run check_balance first.');
+        // Can't check balance without wallet or network
+        if (!hasWallet || !chainConfig) {
           return mcpSuccess({ valid: false, readyToExecute: false, checks, errors, warnings });
         }
 
-        if (!chainConfig) {
-          return mcpSuccess({ valid: false, readyToExecute: false, checks, errors, warnings });
-        }
+        // Get wallet for balance check
+        const { address } = await getWallet();
 
         // Check balance
         let balanceResult;
