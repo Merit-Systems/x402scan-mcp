@@ -7,7 +7,7 @@ MCP server for calling [x402](https://x402.org)-protected APIs with automatic pa
 ### Claude Code
 
 ```bash
-claude mcp add x402scan -- npx -y x402scan-mcp@latest
+claude mcp add x402scan --scope user -- npx -y x402scan-mcp@latest
 ```
 
 ### Codex
