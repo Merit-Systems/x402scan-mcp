@@ -61,16 +61,18 @@ function extractV1DiscoveryInfo(accept: V1Accept): Record<string, unknown> | nul
 }
 
 export function registerQueryEndpointTool(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     'query_endpoint',
-    'Probe an x402-protected endpoint to get pricing and requirements without payment. Returns payment options, Bazaar schema, and Sign-In-With-X auth requirements (x402 v2) if available.',
     {
-      url: z.string().url().describe('The x402-protected endpoint URL to probe'),
-      method: z
-        .enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
-        .default('GET')
-        .describe('HTTP method to use'),
-      body: z.unknown().optional().describe('Request body for POST/PUT/PATCH methods'),
+      description: 'Probe an x402-protected endpoint to get pricing and requirements without payment. Returns payment options, Bazaar schema, and Sign-In-With-X auth requirements (x402 v2) if available.',
+      inputSchema: {
+        url: z.string().url().describe('The x402-protected endpoint URL to probe'),
+        method: z
+          .enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
+          .default('GET')
+          .describe('HTTP method to use'),
+        body: z.unknown().optional().describe('Request body for POST/PUT/PATCH methods'),
+      },
     },
     async ({ url, method, body }) => {
       try {
@@ -191,7 +193,7 @@ export function registerQueryEndpointTool(server: McpServer): void {
             validationErrors: validationErrors.length > 0 ? validationErrors : undefined,
             info: siwx.info,
             schema: siwx.schema,
-            usage: 'Use create_siwe_proof or fetch_with_siwe tools to authenticate',
+            usage: 'Use authed_call tool to make authenticated requests to this endpoint',
           };
         }
 

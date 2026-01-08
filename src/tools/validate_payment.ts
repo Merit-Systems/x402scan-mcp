@@ -34,13 +34,15 @@ const PaymentRequirementsSchema = z
   }));
 
 export function registerValidatePaymentTool(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     'validate_payment',
-    'Pre-flight check if a payment would succeed. Validates wallet, network support, and balance. Use after query_endpoint to verify before execute_call.',
     {
-      requirements: PaymentRequirementsSchema.describe(
-        'Payment requirements from query_endpoint result'
-      ),
+      description: 'Pre-flight check if a payment would succeed. Validates wallet, network support, and balance. Use after query_endpoint to verify before execute_call.',
+      inputSchema: {
+        requirements: PaymentRequirementsSchema.describe(
+          'Payment requirements from query_endpoint result'
+        ),
+      },
     },
     async ({ requirements }) => {
       try {
