@@ -13,20 +13,22 @@ import { mcpSuccess, mcpError, formatUSDC } from '../utils/helpers.js';
 import { getChainName } from '../utils/networks.js';
 
 export function registerExecuteCallTool(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     'execute_call',
-    'Make a paid request to an x402-protected endpoint. Handles 402 payment flow automatically: detects payment requirements, signs payment, and executes request.',
     {
-      url: z.string().url().describe('The x402-protected endpoint URL'),
-      method: z
-        .enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
-        .default('GET')
-        .describe('HTTP method'),
-      body: z.unknown().optional().describe('Request body for POST/PUT/PATCH methods'),
-      headers: z
-        .record(z.string())
-        .optional()
-        .describe('Additional headers to include in the request'),
+      description: 'Make a paid request to an x402-protected endpoint. Handles 402 payment flow automatically: detects payment requirements, signs payment, and executes request.',
+      inputSchema: {
+        url: z.string().url().describe('The x402-protected endpoint URL'),
+        method: z
+          .enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
+          .default('GET')
+          .describe('HTTP method'),
+        body: z.unknown().optional().describe('Request body for POST/PUT/PATCH methods'),
+        headers: z
+          .record(z.string())
+          .optional()
+          .describe('Additional headers to include in the request'),
+      },
     },
     async ({ url, method, body, headers }) => {
       try {

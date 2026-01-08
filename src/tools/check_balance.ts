@@ -13,10 +13,11 @@ import { mcpSuccess, mcpError } from '../utils/helpers.js';
 import { DEFAULT_NETWORK, getChainName, getExplorerUrl, getUSDCAddress, isTestnet } from '../utils/networks.js';
 
 export function registerCheckBalanceTool(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     'check_balance',
-    'Check wallet address and USDC balance. Creates wallet if needed. Returns address, balance, and funding instructions.',
-    {},
+    {
+      description: 'Check wallet address and USDC balance. Creates wallet if needed. Returns address, balance, and funding instructions.',
+    },
     async () => {
       try {
         const { address, isNew } = await getOrCreateWallet();
