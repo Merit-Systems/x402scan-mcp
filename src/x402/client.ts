@@ -1,42 +1,40 @@
 /**
- * x402 client wrapper
- *
- * Thin wrapper around @x402/core that handles wallet setup and provides
- * convenience methods for MCP tool implementations.
+ * x402 HTTP client - handles the 402 payment flow
  */
 
 import type { PrivateKeyAccount } from 'viem/accounts';
+import { privateKeyToAccount } from 'viem/accounts';
 import { x402Client } from '@x402/core/client';
 import { x402HTTPClient } from '@x402/core/http';
 import { registerExactEvmScheme } from '@x402/evm/exact/client';
-import type {
-  PaymentRequired,
-  PaymentPayload,
-  SettleResponse,
-  PaymentRequirements,
-} from '@x402/core/types';
-import { log, logPaymentRequired, logSignature, logSettlement } from '../utils/logger.js';
-import { toCaip2 } from '../utils/networks.js';
-import {
-  normalizePaymentRequired,
-  type NormalizedPaymentRequired,
-  type NormalizedRequirement,
-} from './normalize.js';
+import type { PaymentRequired, PaymentPayload } from '@x402/core/types';
+import { log } from '../log';
+import { toCaip2 } from '../networks';
+import { normalizePaymentRequired, type NormalizedPaymentRequired } from './protocol';
 
-// Re-export types from @x402/core for convenience
-export type {
-  PaymentRequired,
-  PaymentPayload,
-  SettleResponse,
-  PaymentRequirements,
-} from '@x402/core/types';
+export type { NormalizedPaymentRequired, NormalizedRequirement } from './protocol';
 
-// Re-export normalized types for downstream use
-export type { NormalizedPaymentRequired, NormalizedRequirement } from './normalize.js';
+// Cached parse-only client (no real signing needed)
+let parseClient: x402HTTPClient | null = null;
+const DUMMY_KEY = '0x0000000000000000000000000000000000000000000000000000000000000001' as `0x${string}`;
 
-export interface X402ClientConfig {
-  account: PrivateKeyAccount;
-  preferredNetwork?: string;
+export function getParseClient(): x402HTTPClient {
+  if (!parseClient) {
+    const core = new x402Client();
+    registerExactEvmScheme(core, { signer: privateKeyToAccount(DUMMY_KEY) });
+    parseClient = new x402HTTPClient(core);
+  }
+  return parseClient;
+}
+
+export function createClient(account: PrivateKeyAccount, preferredNetwork?: string): x402HTTPClient {
+  const core = new x402Client(
+    preferredNetwork
+      ? (_v, accepts) => accepts.find((a) => toCaip2(a.network) === toCaip2(preferredNetwork)) ?? accepts[0]
+      : undefined
+  );
+  registerExactEvmScheme(core, { signer: account });
+  return new x402HTTPClient(core);
 }
 
 export interface RequestResult<T = unknown> {
@@ -56,130 +54,77 @@ export interface RequestResult<T = unknown> {
   };
 }
 
-/**
- * Create and configure an x402 client
- */
-export function createX402Client(config: X402ClientConfig): {
-  coreClient: x402Client;
-  httpClient: x402HTTPClient;
-} {
-  const { account, preferredNetwork } = config;
-
-  // Create core client with optional network preference selector
-  const coreClient = new x402Client(
-    preferredNetwork
-      ? (_version, accepts) => {
-          const preferred = accepts.find((a) => toCaip2(a.network) === toCaip2(preferredNetwork));
-          return preferred || accepts[0];
-        }
-      : undefined
-  );
-
-  // Register EVM scheme for signing
-  registerExactEvmScheme(coreClient, { signer: account });
-
-  // Create HTTP client wrapper
-  const httpClient = new x402HTTPClient(coreClient);
-
-  return { coreClient, httpClient };
+interface RequestOptions {
+  method?: string;
+  body?: unknown;
+  headers?: Record<string, string>;
 }
 
 /**
  * Make a request to an x402-protected endpoint
- *
- * Handles the full 402 payment flow:
- * 1. Initial request
- * 2. Parse payment requirements from 402 response
- * 3. Create signed payment payload
- * 4. Retry with payment header
- * 5. Parse settlement response
+ * Handles the full 402 payment flow automatically
  */
-export async function makeX402Request<T = unknown>(
-  httpClient: x402HTTPClient,
+export async function makeRequest<T = unknown>(
+  client: x402HTTPClient,
   url: string,
-  options: {
-    method?: string;
-    body?: unknown;
-    headers?: Record<string, string>;
-  } = {}
+  opts: RequestOptions = {}
 ): Promise<RequestResult<T>> {
-  const { method = 'GET', body, headers = {} } = options;
+  const { method = 'GET', body, headers = {} } = opts;
 
-  // Phase 1: Initial request without payment
+  // Phase 1: Initial request
   log.debug(`Making initial request: ${method} ${url}`);
 
   let firstResponse: Response;
   try {
     firstResponse = await fetch(url, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
-      },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (err) {
     return {
       success: false,
       statusCode: 0,
-      error: {
-        phase: 'initial_request',
-        message: `Network error: ${err instanceof Error ? err.message : String(err)}`,
-      },
+      error: { phase: 'initial_request', message: `Network error: ${err instanceof Error ? err.message : String(err)}` },
     };
   }
 
-  // If not 402, return the response as-is
+  // Not 402 - return as-is
   if (firstResponse.status !== 402) {
     if (firstResponse.ok) {
       try {
-        const data = (await firstResponse.json()) as T;
-        return {
-          success: true,
-          statusCode: firstResponse.status,
-          data,
-        };
+        return { success: true, statusCode: firstResponse.status, data: (await firstResponse.json()) as T };
       } catch {
-        return {
-          success: true,
-          statusCode: firstResponse.status,
-          data: (await firstResponse.text()) as unknown as T,
-        };
+        return { success: true, statusCode: firstResponse.status, data: (await firstResponse.text()) as unknown as T };
       }
-    } else {
-      const errorText = await firstResponse.text();
-      return {
-        success: false,
-        statusCode: firstResponse.status,
-        error: {
-          phase: 'initial_request',
-          message: `HTTP ${firstResponse.status}: ${errorText}`,
-        },
-      };
     }
+    return {
+      success: false,
+      statusCode: firstResponse.status,
+      error: { phase: 'initial_request', message: `HTTP ${firstResponse.status}: ${await firstResponse.text()}` },
+    };
   }
 
   // Phase 2: Parse payment requirements
-  log.debug('Got 402 Payment Required, parsing requirements...');
+  log.debug('Got 402, parsing requirements...');
 
   let rawPaymentRequired: PaymentRequired;
   let paymentRequired: NormalizedPaymentRequired;
   let responseBody: unknown;
+
   try {
-    // Try to get body for v1 compatibility
     try {
       responseBody = await firstResponse.clone().json();
     } catch {
       responseBody = undefined;
     }
 
-    rawPaymentRequired = httpClient.getPaymentRequiredResponse(
+    rawPaymentRequired = client.getPaymentRequiredResponse(
       (name) => firstResponse.headers.get(name),
       responseBody
     );
-    // Normalize v1/v2 responses to consistent format
     paymentRequired = normalizePaymentRequired(rawPaymentRequired);
-    logPaymentRequired(rawPaymentRequired);
+    log.debug('Payment required:', paymentRequired);
   } catch (err) {
     return {
       success: false,
@@ -187,50 +132,38 @@ export async function makeX402Request<T = unknown>(
       error: {
         phase: 'parse_requirements',
         message: `Failed to parse payment requirements: ${err instanceof Error ? err.message : String(err)}`,
-        details: {
-          headers: Object.fromEntries(firstResponse.headers.entries()),
-          body: responseBody,
-        },
+        details: { headers: Object.fromEntries(firstResponse.headers.entries()), body: responseBody },
       },
     };
   }
 
-  // Phase 3: Create signed payment payload
+  // Phase 3: Create signed payment
   log.debug('Creating payment payload...');
 
   let paymentPayload: PaymentPayload;
   try {
-    // Use raw (non-normalized) payment requirements for @x402/core SDK
-    paymentPayload = await httpClient.createPaymentPayload(rawPaymentRequired);
+    paymentPayload = await client.createPaymentPayload(rawPaymentRequired);
     log.debug(`Payment created for network: ${paymentPayload.accepted?.network}`);
   } catch (err) {
     return {
       success: false,
       statusCode: 402,
       paymentRequired,
-      error: {
-        phase: 'create_signature',
-        message: `Failed to create payment signature: ${err instanceof Error ? err.message : String(err)}`,
-      },
+      error: { phase: 'create_signature', message: `Failed to create payment: ${err instanceof Error ? err.message : String(err)}` },
     };
   }
 
-  // Encode payment header
-  const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload);
-  logSignature(paymentHeaders);
+  const paymentHeaders = client.encodePaymentSignatureHeader(paymentPayload);
+  log.debug('Payment headers:', Object.keys(paymentHeaders).join(', '));
 
-  // Phase 4: Retry with payment header
-  log.debug('Retrying request with payment...');
+  // Phase 4: Retry with payment
+  log.debug('Retrying with payment...');
 
   let paidResponse: Response;
   try {
     paidResponse = await fetch(url, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...paymentHeaders,
-        ...headers,
-      },
+      headers: { 'Content-Type': 'application/json', ...paymentHeaders, ...headers },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (err) {
@@ -238,44 +171,35 @@ export async function makeX402Request<T = unknown>(
       success: false,
       statusCode: 0,
       paymentRequired,
-      error: {
-        phase: 'paid_request',
-        message: `Network error on paid request: ${err instanceof Error ? err.message : String(err)}`,
-      },
+      error: { phase: 'paid_request', message: `Network error on paid request: ${err instanceof Error ? err.message : String(err)}` },
     };
   }
 
   if (!paidResponse.ok) {
-    const errorText = await paidResponse.text();
     return {
       success: false,
       statusCode: paidResponse.status,
       paymentRequired,
       error: {
         phase: 'paid_request',
-        message: `HTTP ${paidResponse.status} after payment: ${errorText}`,
-        details: {
-          headers: Object.fromEntries(paidResponse.headers.entries()),
-        },
+        message: `HTTP ${paidResponse.status} after payment: ${await paidResponse.text()}`,
+        details: { headers: Object.fromEntries(paidResponse.headers.entries()) },
       },
     };
   }
 
-  // Phase 5: Parse settlement response
+  // Phase 5: Parse settlement
   let settlement: RequestResult<T>['settlement'];
   try {
-    const settleResponse = httpClient.getPaymentSettleResponse(
-      (name) => paidResponse.headers.get(name)
-    );
-    logSettlement(settleResponse);
+    const settle = client.getPaymentSettleResponse((name) => paidResponse.headers.get(name));
+    log.debug('Settlement:', settle);
     settlement = {
-      transactionHash: settleResponse.transaction,
-      network: settleResponse.network,
-      payer: settleResponse.payer || paymentPayload.accepted?.payTo || '',
+      transactionHash: settle.transaction,
+      network: settle.network,
+      payer: settle.payer || paymentPayload.accepted?.payTo || '',
     };
   } catch (err) {
-    // Settlement header may not be present in all cases
-    log.debug(`Could not parse settlement response: ${err instanceof Error ? err.message : String(err)}`);
+    log.debug(`Could not parse settlement: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // Parse response data
@@ -286,29 +210,10 @@ export async function makeX402Request<T = unknown>(
     data = (await paidResponse.text()) as unknown as T;
   }
 
-  return {
-    success: true,
-    statusCode: paidResponse.status,
-    data,
-    settlement,
-    paymentRequired,
-  };
+  return { success: true, statusCode: paidResponse.status, data, settlement, paymentRequired };
 }
 
-/**
- * Query an endpoint for payment requirements without making a payment
- *
- * Makes a request without payment header to get 402 response with requirements.
- */
-export async function queryEndpoint(
-  url: string,
-  httpClient: x402HTTPClient,
-  options: {
-    method?: string;
-    body?: unknown;
-    headers?: Record<string, string>;
-  } = {}
-): Promise<{
+export interface QueryResult {
   success: boolean;
   statusCode: number;
   x402Version?: number;
@@ -317,39 +222,35 @@ export async function queryEndpoint(
   parseErrors?: string[];
   rawHeaders?: Record<string, string>;
   rawBody?: unknown;
-}> {
-  const { method = 'GET', body, headers = {} } = options;
+}
+
+/**
+ * Query an endpoint for payment requirements without making payment
+ */
+export async function queryEndpoint(
+  url: string,
+  opts: { method?: string; body?: unknown; headers?: Record<string, string> } = {}
+): Promise<QueryResult> {
+  const { method = 'GET', body, headers = {} } = opts;
+  const client = getParseClient();
 
   let response: Response;
   try {
     response = await fetch(url, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
-      },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (err) {
-    return {
-      success: false,
-      statusCode: 0,
-      error: `Network error: ${err instanceof Error ? err.message : String(err)}`,
-    };
+    return { success: false, statusCode: 0, error: `Network error: ${err instanceof Error ? err.message : String(err)}` };
   }
 
   const rawHeaders = Object.fromEntries(response.headers.entries());
 
-  // If not 402, the endpoint doesn't require payment
   if (response.status !== 402) {
-    return {
-      success: true,
-      statusCode: response.status,
-      rawHeaders,
-    };
+    return { success: true, statusCode: response.status, rawHeaders };
   }
 
-  // Try to parse body for v1 compatibility
   let rawBody: unknown;
   try {
     rawBody = await response.json();
@@ -357,23 +258,10 @@ export async function queryEndpoint(
     rawBody = undefined;
   }
 
-  // Parse payment requirements
   try {
-    const rawPaymentRequired = httpClient.getPaymentRequiredResponse(
-      (name) => response.headers.get(name),
-      rawBody
-    );
-    // Normalize v1/v2 responses to consistent format
-    const paymentRequired = normalizePaymentRequired(rawPaymentRequired);
-
-    return {
-      success: true,
-      statusCode: 402,
-      x402Version: paymentRequired.x402Version,
-      paymentRequired,
-      rawHeaders,
-      rawBody,
-    };
+    const raw = client.getPaymentRequiredResponse((name) => response.headers.get(name), rawBody);
+    const paymentRequired = normalizePaymentRequired(raw);
+    return { success: true, statusCode: 402, x402Version: paymentRequired.x402Version, paymentRequired, rawHeaders, rawBody };
   } catch (err) {
     return {
       success: false,

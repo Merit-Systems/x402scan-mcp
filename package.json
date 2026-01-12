@@ -1,6 +1,6 @@
 {
   "name": "x402scan-mcp",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Generic MCP server for calling x402-protected APIs with automatic payment handling",
   "type": "module",
   "main": "dist/index.js",
@@ -16,6 +16,7 @@
     "dev": "tsx src/index.ts",
     "dev:bun": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
+    "test": "bun test",
     "publish-package": "tsx scripts/publish.ts",
     "prepublishOnly": "npm run build"
   },
