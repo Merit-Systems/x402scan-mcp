@@ -14,14 +14,14 @@ export async function startServer(): Promise<void> {
 
   const server = new McpServer({
     name: 'x402scan',
-    version: '0.0.6',
+    version: '0.0.7',
   });
 
   registerPaymentTools(server);
   registerAuthTools(server);
   registerWalletTools(server);
 
-  log.info('Registered 6 tools: check_balance, query_endpoint, validate_payment, execute_call, create_siwe_proof, fetch_with_siwe');
+  log.info('Registered 7 tools: check_balance, query_endpoint, validate_payment, execute_call, create_siwe_proof, fetch_with_siwe, authed_call');
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

@@ -36,7 +36,7 @@ export function registerPaymentTools(server: McpServer): void {
   server.registerTool(
     'query_endpoint',
     {
-      description: 'Probe an x402-protected endpoint to get pricing and requirements without payment.',
+      description: 'Probe an x402-protected endpoint to get pricing and requirements without payment. Returns payment options, Bazaar schema, and Sign-In-With-X auth requirements (x402 v2) if available.',
       inputSchema: {
         url: z.string().url().describe('The endpoint URL to probe'),
         method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).default('GET'),
@@ -123,7 +123,7 @@ export function registerPaymentTools(server: McpServer): void {
             validationErrors: validationErrors.length > 0 ? validationErrors : undefined,
             info: siwx.info,
             schema: siwx.schema,
-            usage: 'Use create_siwe_proof or fetch_with_siwe tools to authenticate',
+            usage: 'Use authed_call tool to make authenticated requests to this endpoint',
           };
         }
 
