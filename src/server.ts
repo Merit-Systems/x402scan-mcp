@@ -21,7 +21,7 @@ export async function startServer(): Promise<void> {
   registerAuthTools(server);
   registerWalletTools(server);
 
-  log.info('Registered 7 tools: check_balance, query_endpoint, validate_payment, execute_call, create_siwe_proof, fetch_with_siwe, authed_call');
+  log.info('Registered 5 tools: check_balance, query_endpoint, validate_payment, execute_call, authed_call');
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
