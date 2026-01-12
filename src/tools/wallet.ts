@@ -1,41 +1,34 @@
 /**
- * check_balance MCP tool
- *
- * Returns wallet address, USDC balance, and funding instructions.
- * Creates wallet if it doesn't exist.
+ * Wallet tools - balance checking
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { getOrCreateWallet, getWalletFilePath } from '../wallet/manager.js';
-import { getUSDCBalance } from '../balance/usdc.js';
-import { mcpSuccess, mcpError } from '../utils/helpers.js';
-import { DEFAULT_NETWORK, getChainName, getExplorerUrl, getUSDCAddress, isTestnet } from '../utils/networks.js';
+import { mcpSuccess, mcpError } from '../response';
+import { getWallet, keystorePath } from '../keystore';
+import { getUSDCBalance } from '../balance';
+import { DEFAULT_NETWORK, getChainName, getExplorerUrl, getUSDCAddress, isTestnet } from '../networks';
 
-export function registerCheckBalanceTool(server: McpServer): void {
+export function registerWalletTools(server: McpServer): void {
   server.registerTool(
     'check_balance',
     {
-      description: 'Check wallet address and USDC balance. Creates wallet if needed. Returns address, balance, and funding instructions.',
+      description: 'Check wallet address and USDC balance. Creates wallet if needed.',
     },
     async () => {
       try {
-        const { address, isNew } = await getOrCreateWallet();
-        const walletFile = getWalletFilePath();
+        const { address, isNew } = await getWallet();
 
-        // Get balance on default network (Base mainnet)
         let balance;
         try {
           balance = await getUSDCBalance(address, DEFAULT_NETWORK);
         } catch (err) {
-          // Balance check failed - might be network issue
           return mcpSuccess({
             address,
             network: DEFAULT_NETWORK,
             networkName: getChainName(DEFAULT_NETWORK),
             balanceUSDC: null,
             balanceError: err instanceof Error ? err.message : 'Failed to fetch balance',
-            walletFile,
+            walletFile: keystorePath,
             isNewWallet: isNew,
             fundingInstructions: getFundingInstructions(address, DEFAULT_NETWORK),
           });
@@ -47,16 +40,16 @@ export function registerCheckBalanceTool(server: McpServer): void {
           networkName: getChainName(balance.network),
           balanceUSDC: balance.formatted,
           balanceFormatted: balance.formattedString,
-          walletFile,
+          walletFile: keystorePath,
           isNewWallet: isNew,
         };
 
-        // Add funding instructions if balance is low
         if (balance.formatted < 1) {
           response.fundingInstructions = getFundingInstructions(address, balance.network);
-          response.suggestion = balance.formatted === 0
-            ? 'Your wallet has no USDC. Send USDC to the address above to start making paid API calls.'
-            : 'Your balance is low. Consider topping up to continue making paid API calls.';
+          response.suggestion =
+            balance.formatted === 0
+              ? 'Your wallet has no USDC. Send USDC to the address above to start making paid API calls.'
+              : 'Your balance is low. Consider topping up.';
         }
 
         return mcpSuccess(response);

@@ -24,6 +24,7 @@ describe('Sign-In-With-X', () => {
 
   it('creates valid extension declaration', () => {
     const extensions = declareSIWxExtension({
+      domain: 'api.example.com',
       resourceUri: testUri,
       network: testNetwork,
       statement: 'Test authentication',
@@ -41,6 +42,7 @@ describe('Sign-In-With-X', () => {
 
   it('creates and signs payload with wallet', async () => {
     const extensions = declareSIWxExtension({
+      domain: 'api.example.com',
       resourceUri: testUri,
       network: testNetwork,
     });
@@ -58,6 +60,7 @@ describe('Sign-In-With-X', () => {
 
   it('encodes payload as base64', async () => {
     const extensions = declareSIWxExtension({
+      domain: 'api.example.com',
       resourceUri: testUri,
       network: testNetwork,
     });
@@ -80,6 +83,7 @@ describe('Sign-In-With-X', () => {
 
   it('round-trips: create -> encode -> parse -> validate -> verify', async () => {
     const extensions = declareSIWxExtension({
+      domain: 'api.example.com',
       resourceUri: testUri,
       network: testNetwork,
       statement: 'Round-trip test',
@@ -110,6 +114,7 @@ describe('Sign-In-With-X', () => {
 
   it('rejects tampered payload', async () => {
     const extensions = declareSIWxExtension({
+      domain: 'api.example.com',
       resourceUri: testUri,
       network: testNetwork,
     });
