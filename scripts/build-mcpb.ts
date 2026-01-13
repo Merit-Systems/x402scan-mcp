@@ -37,8 +37,8 @@ async function main() {
   const serverDir = join(bundleDir, 'server');
   mkdirSync(serverDir, { recursive: true });
 
-  // Copy the bundled dist-bundle/index.js to server/index.js
-  cpSync(join(ROOT, 'dist-bundle', 'index.js'), join(serverDir, 'index.js'));
+  // Copy the bundled dist-bundle/index.cjs to server/index.cjs
+  cpSync(join(ROOT, 'dist-bundle', 'index.cjs'), join(serverDir, 'index.cjs'));
 
   // Copy manifest.json to bundle root
   cpSync(join(ROOT, 'manifest.json'), join(bundleDir, 'manifest.json'));
