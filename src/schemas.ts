@@ -31,3 +31,6 @@ export const requestWithHeadersSchema = requestSchema.extend({
     .describe("Additional headers to include")
     .default({}),
 });
+
+export type Request = z.infer<typeof requestSchema>;
+export type RequestWithHeaders = z.infer<typeof requestWithHeadersSchema>;

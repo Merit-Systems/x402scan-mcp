@@ -66,14 +66,3 @@ export async function getWallet() {
   log.info(`Saved to: ${KEYSTORE_FILE}`);
   return account;
 }
-
-/** Check if wallet exists without creating one */
-export async function walletExists(): Promise<boolean> {
-  if (process.env.X402_PRIVATE_KEY) return true;
-  try {
-    await fs.access(KEYSTORE_FILE);
-    return true;
-  } catch {
-    return false;
-  }
-}

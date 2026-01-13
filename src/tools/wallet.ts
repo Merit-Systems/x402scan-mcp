@@ -2,8 +2,6 @@
  * Wallet tools - balance checking
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-
 import { mcpSuccess, mcpError } from "../response";
 import { getUSDCBalance } from "../balance";
 import {
@@ -29,7 +27,9 @@ export const registerWalletTools: RegisterTools = ({
     async () => {
       try {
         try {
-          const balance = await getUSDCBalance(address, DEFAULT_NETWORK);
+          const balance = await getUSDCBalance({
+            address,
+          });
           return mcpSuccess({
             address,
             network: balance.network,
@@ -74,7 +74,7 @@ export const registerWalletTools: RegisterTools = ({
 
 function getFundingInstructions(
   address: string,
-  network: string
+  network = DEFAULT_NETWORK
 ): Record<string, unknown> {
   const explorerUrl = getExplorerUrl(network);
   const usdcAddress = getUSDCAddress(network);

@@ -60,12 +60,9 @@ export const registerPaymentTools: RegisterTools = ({ server, account }) => {
           isX402Endpoint: true,
           x402Version: pr.x402Version,
           requirements,
+          ...(pr.resource && { resource: pr.resource }),
+          ...(pr.error && { error: pr.error }),
         };
-
-        // Resource info (v2)
-        if (pr.resource) {
-          response.resource = pr.resource;
-        }
 
         // Bazaar extension (v2)
         if (pr.extensions?.bazaar) {
@@ -128,8 +125,6 @@ export const registerPaymentTools: RegisterTools = ({ server, account }) => {
           };
         }
 
-        if (pr.error) response.serverError = pr.error;
-
         return mcpSuccess(response);
       } catch (err) {
         return mcpError(err, { tool: "query_endpoint", url });
@@ -155,48 +150,42 @@ export const registerPaymentTools: RegisterTools = ({ server, account }) => {
         });
 
         if (!result.success) {
-          const errorResponse: Record<string, unknown> = {
+          return mcpError(result.error?.message ?? "Request failed", {
             success: false,
             statusCode: result.statusCode,
             error: result.error,
-          };
-          if (result.paymentRequired) {
-            errorResponse.paymentRequired = {
-              x402Version: result.paymentRequired.x402Version,
-              requirements: result.paymentRequired.accepts.map((req) => ({
-                network: req.network,
-                networkName: getChainName(req.network),
-                price: formatUSDC(BigInt(req.amount)),
-                priceRaw: req.amount,
-              })),
-            };
-          }
-          return mcpError(
-            result.error?.message || "Request failed",
-            errorResponse
-          );
+            ...(result.paymentRequired && {
+              paymentRequired: {
+                x402Version: result.paymentRequired.x402Version,
+                requirements: result.paymentRequired.accepts.map((req) => ({
+                  network: req.network,
+                  networkName: getChainName(req.network),
+                  price: formatUSDC(BigInt(req.amount)),
+                  priceRaw: req.amount,
+                })),
+              },
+            }),
+          });
         }
 
-        const response: Record<string, unknown> = {
+        const amount = result.paymentRequired?.accepts?.[0]?.amount;
+        const response = {
           success: true,
           statusCode: result.statusCode,
           data: result.data,
+          ...(result.settlement && {
+            settlement: {
+              transactionHash: result.settlement.transactionHash,
+              network: result.settlement.network,
+              networkName: getChainName(result.settlement.network),
+              payer: account.address,
+              ...(amount && { amountPaid: formatUSDC(BigInt(amount)) }),
+            },
+          }),
+          ...(result.paymentRequired && {
+            x402Version: result.paymentRequired.x402Version,
+          }),
         };
-
-        if (result.settlement) {
-          const amount = result.paymentRequired?.accepts?.[0]?.amount;
-          response.settlement = {
-            transactionHash: result.settlement.transactionHash,
-            network: result.settlement.network,
-            networkName: getChainName(result.settlement.network),
-            payer: account.address,
-            ...(amount && { amountPaid: formatUSDC(BigInt(amount)) }),
-          };
-        }
-
-        if (result.paymentRequired) {
-          response.x402Version = result.paymentRequired.x402Version;
-        }
 
         return mcpSuccess(response);
       } catch (err) {

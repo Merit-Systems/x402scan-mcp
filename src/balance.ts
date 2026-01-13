@@ -10,15 +10,21 @@ import { log } from "./log";
 
 import type { Address } from "viem";
 
-export async function getUSDCBalance(
-  address: Address,
-  network: string = DEFAULT_NETWORK
-) {
-  const caip2 = toCaip2(network);
-  const chain = getChain(caip2);
-  const usdcAddress = getUSDCAddress(caip2);
+interface GetUSDCBalanceProps {
+  address: Address;
+  network?: string;
+}
 
+export async function getUSDCBalance({
+  address,
+  network = DEFAULT_NETWORK,
+}: GetUSDCBalanceProps) {
+  const caip2 = toCaip2(network);
+
+  const chain = getChain(caip2);
   if (!chain) throw new Error(`Unsupported network: ${network}`);
+
+  const usdcAddress = getUSDCAddress(caip2);
   if (!usdcAddress) throw new Error(`No USDC address for network: ${network}`);
 
   log.debug(`Reading USDC balance for ${address} on ${chain.name}`);
@@ -41,25 +47,5 @@ export async function getUSDCBalance(
     decimals,
     network: caip2,
     usdcAddress,
-  };
-}
-
-export async function hasSufficientBalance(
-  address: Address,
-  requiredAmount: bigint | string,
-  network: string = DEFAULT_NETWORK
-) {
-  const required =
-    typeof requiredAmount === "string"
-      ? BigInt(requiredAmount)
-      : requiredAmount;
-  const { balance } = await getUSDCBalance(address, network);
-  const sufficient = balance >= required;
-
-  return {
-    sufficient,
-    currentBalance: balance,
-    requiredAmount: required,
-    shortfall: sufficient ? 0n : required - balance,
   };
 }
