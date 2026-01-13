@@ -2,14 +2,18 @@
  * Payment tools - query, validate, execute
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { mcpSuccess, mcpError, formatUSDC } from '../response';
-import { getWallet, walletExists } from '../keystore';
-import { createClient, makeRequest, queryEndpoint, type QueryResult } from '../x402/client';
-import { extractV1Schema } from '../x402/protocol';
-import { getChainConfig, getChainName, toCaip2 } from '../networks';
-import { getUSDCBalance, hasSufficientBalance } from '../balance';
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
+import { z } from "zod";
+
+import { mcpSuccess, mcpError, formatUSDC } from "../response";
+import { getWallet, walletExists } from "../keystore";
+
+import { createClient, makeRequest, queryEndpoint } from "../x402/client";
+
+import { extractV1Schema } from "../x402/protocol";
+import { getChainConfig, getChainName, toCaip2 } from "../networks";
+import { hasSufficientBalance } from "../balance";
 
 // Schema accepts both v1 (maxAmountRequired) and v2 (amount) field names
 const PaymentRequirementsSchema = z
@@ -24,7 +28,7 @@ const PaymentRequirementsSchema = z
     extra: z.record(z.unknown()).optional(),
   })
   .refine((data) => data.amount || data.maxAmountRequired, {
-    message: 'Either amount (v2) or maxAmountRequired (v1) must be provided',
+    message: "Either amount (v2) or maxAmountRequired (v1) must be provided",
   })
   .transform((data) => ({
     ...data,
@@ -34,13 +38,19 @@ const PaymentRequirementsSchema = z
 export function registerPaymentTools(server: McpServer): void {
   // query_endpoint - probe for pricing without payment
   server.registerTool(
-    'query_endpoint',
+    "query_endpoint",
     {
-      description: 'Probe an x402-protected endpoint to get pricing and requirements without payment. Returns payment options, Bazaar schema, and Sign-In-With-X auth requirements (x402 v2) if available.',
+      description:
+        "Probe an x402-protected endpoint to get pricing and requirements without payment. Returns payment options, Bazaar schema, and Sign-In-With-X auth requirements (x402 v2) if available.",
       inputSchema: {
-        url: z.string().url().describe('The endpoint URL to probe'),
-        method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).default('GET'),
-        body: z.unknown().optional().describe('Request body for POST/PUT/PATCH'),
+        url: z.string().url().describe("The endpoint URL to probe"),
+        method: z
+          .enum(["GET", "POST", "PUT", "DELETE", "PATCH"])
+          .default("GET"),
+        body: z
+          .unknown()
+          .optional()
+          .describe("Request body for POST/PUT/PATCH"),
       },
     },
     async ({ url, method, body }) => {
@@ -48,7 +58,7 @@ export function registerPaymentTools(server: McpServer): void {
         const result = await queryEndpoint(url, { method, body });
 
         if (!result.success) {
-          return mcpError(result.error || 'Failed to query endpoint', {
+          return mcpError(result.error || "Failed to query endpoint", {
             statusCode: result.statusCode,
             parseErrors: result.parseErrors,
             rawHeaders: result.rawHeaders,
@@ -60,7 +70,7 @@ export function registerPaymentTools(server: McpServer): void {
           return mcpSuccess({
             isX402Endpoint: false,
             statusCode: result.statusCode,
-            message: 'This endpoint does not require payment',
+            message: "This endpoint does not require payment",
             rawHeaders: result.rawHeaders,
           });
         }
@@ -92,7 +102,12 @@ export function registerPaymentTools(server: McpServer): void {
         // Bazaar extension (v2)
         if (pr.extensions?.bazaar) {
           const bazaar = pr.extensions.bazaar as Record<string, unknown>;
-          response.bazaar = { info: bazaar.info, schema: bazaar.schema, examples: bazaar.examples, hasBazaarExtension: true };
+          response.bazaar = {
+            info: bazaar.info,
+            schema: bazaar.schema,
+            examples: bazaar.examples,
+            hasBazaarExtension: true,
+          };
         } else if (pr.x402Version === 1 && result.rawBody) {
           // V1 - extract from outputSchema
           const v1Body = result.rawBody as { accepts?: unknown[] };
@@ -100,30 +115,48 @@ export function registerPaymentTools(server: McpServer): void {
           if (firstAccept) {
             const discoveryInfo = extractV1Schema(firstAccept);
             if (discoveryInfo) {
-              response.bazaar = { info: discoveryInfo, schema: null, hasBazaarExtension: true, sourceVersion: 1 };
+              response.bazaar = {
+                info: discoveryInfo,
+                schema: null,
+                hasBazaarExtension: true,
+                sourceVersion: 1,
+              };
             }
           }
         }
 
         // Sign-In-With-X extension (v2)
-        if (pr.extensions?.['sign-in-with-x']) {
-          const siwx = pr.extensions['sign-in-with-x'] as { info?: Record<string, unknown>; schema?: Record<string, unknown> };
+        if (pr.extensions?.["sign-in-with-x"]) {
+          const siwx = pr.extensions["sign-in-with-x"] as {
+            info?: Record<string, unknown>;
+            schema?: Record<string, unknown>;
+          };
           const info = siwx.info || {};
-          const requiredFields = ['domain', 'uri', 'version', 'chainId', 'nonce', 'issuedAt'];
+          const requiredFields = [
+            "domain",
+            "uri",
+            "version",
+            "chainId",
+            "nonce",
+            "issuedAt",
+          ];
           const missingFields = requiredFields.filter((f) => !info[f]);
           const validationErrors: string[] = [];
 
           if (!siwx.info) validationErrors.push('Missing "info" object');
-          else if (missingFields.length > 0) validationErrors.push(`Missing: ${missingFields.join(', ')}`);
+          else if (missingFields.length > 0)
+            validationErrors.push(`Missing: ${missingFields.join(", ")}`);
           if (!siwx.schema) validationErrors.push('Missing "schema" object');
 
           response.signInWithX = {
             required: true,
             valid: validationErrors.length === 0,
-            validationErrors: validationErrors.length > 0 ? validationErrors : undefined,
+            validationErrors:
+              validationErrors.length > 0 ? validationErrors : undefined,
             info: siwx.info,
             schema: siwx.schema,
-            usage: 'Use authed_call tool to make authenticated requests to this endpoint',
+            usage:
+              "Use authed_call tool to make authenticated requests to this endpoint",
           };
         }
 
@@ -131,18 +164,21 @@ export function registerPaymentTools(server: McpServer): void {
 
         return mcpSuccess(response);
       } catch (err) {
-        return mcpError(err, { tool: 'query_endpoint', url });
+        return mcpError(err, { tool: "query_endpoint", url });
       }
     }
   );
 
   // validate_payment - pre-flight check
   server.registerTool(
-    'validate_payment',
+    "validate_payment",
     {
-      description: 'Pre-flight check if a payment would succeed. Validates wallet, network, and balance.',
+      description:
+        "Pre-flight check if a payment would succeed. Validates wallet, network, and balance.",
       inputSchema: {
-        requirements: PaymentRequirementsSchema.describe('Payment requirements from query_endpoint'),
+        requirements: PaymentRequirementsSchema.describe(
+          "Payment requirements from query_endpoint"
+        ),
       },
     },
     async ({ requirements }) => {
@@ -155,7 +191,9 @@ export function registerPaymentTools(server: McpServer): void {
         const hasWallet = await walletExists();
         checks.walletExists = hasWallet;
         if (!hasWallet) {
-          errors.push('No wallet found. Run check_balance first to create a wallet.');
+          errors.push(
+            "No wallet found. Run check_balance first to create a wallet."
+          );
         }
 
         // Check network support
@@ -167,14 +205,22 @@ export function registerPaymentTools(server: McpServer): void {
         }
 
         // Check scheme support
-        checks.schemeSupported = requirements.scheme === 'exact';
-        if (requirements.scheme !== 'exact') {
-          errors.push(`Scheme not supported: ${requirements.scheme}. Only 'exact' is supported.`);
+        checks.schemeSupported = requirements.scheme === "exact";
+        if (requirements.scheme !== "exact") {
+          errors.push(
+            `Scheme not supported: ${requirements.scheme}. Only 'exact' is supported.`
+          );
         }
 
         // Can't check balance without wallet or network
         if (!hasWallet || !chainConfig) {
-          return mcpSuccess({ valid: false, readyToExecute: false, checks, errors, warnings });
+          return mcpSuccess({
+            valid: false,
+            readyToExecute: false,
+            checks,
+            errors,
+            warnings,
+          });
         }
 
         // Get wallet for balance check
@@ -183,24 +229,35 @@ export function registerPaymentTools(server: McpServer): void {
         // Check balance
         let balanceResult;
         try {
-          balanceResult = await hasSufficientBalance(address, requirements.amount, caip2);
+          balanceResult = await hasSufficientBalance(
+            address,
+            requirements.amount,
+            caip2
+          );
           checks.sufficientBalance = balanceResult.sufficient;
           if (!balanceResult.sufficient) {
             errors.push(
-              `Insufficient balance. Required: ${formatUSDC(balanceResult.requiredAmount)}, ` +
-                `Available: ${formatUSDC(balanceResult.currentBalance)}`
+              `Insufficient balance. Required: ${formatUSDC(
+                balanceResult.requiredAmount
+              )}, ` + `Available: ${formatUSDC(balanceResult.currentBalance)}`
             );
           }
         } catch (err) {
           checks.sufficientBalance = false;
-          errors.push(`Failed to check balance: ${err instanceof Error ? err.message : String(err)}`);
+          errors.push(
+            `Failed to check balance: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
         }
 
         // Check asset
         const expectedUsdc = chainConfig.usdcAddress.toLowerCase();
         checks.assetIsUSDC = expectedUsdc === requirements.asset.toLowerCase();
         if (!checks.assetIsUSDC) {
-          warnings.push(`Asset may not be USDC. Expected: ${expectedUsdc}, Got: ${requirements.asset}`);
+          warnings.push(
+            `Asset may not be USDC. Expected: ${expectedUsdc}, Got: ${requirements.asset}`
+          );
         }
 
         checks.signatureCapable = true;
@@ -210,7 +267,12 @@ export function registerPaymentTools(server: McpServer): void {
           valid,
           readyToExecute: valid,
           checks,
-          network: { requested: requirements.network, resolved: caip2, name: getChainName(caip2), supported: true },
+          network: {
+            requested: requirements.network,
+            resolved: caip2,
+            name: getChainName(caip2),
+            supported: true,
+          },
         };
 
         if (balanceResult) {
@@ -226,28 +288,38 @@ export function registerPaymentTools(server: McpServer): void {
 
         return mcpSuccess(response);
       } catch (err) {
-        return mcpError(err, { tool: 'validate_payment' });
+        return mcpError(err, { tool: "validate_payment" });
       }
     }
   );
 
   // execute_call - make paid request
   server.registerTool(
-    'execute_call',
+    "execute_call",
     {
-      description: 'Make a paid request to an x402-protected endpoint. Handles 402 payment flow automatically.',
+      description:
+        "Make a paid request to an x402-protected endpoint. Handles 402 payment flow automatically.",
       inputSchema: {
-        url: z.string().url().describe('The endpoint URL'),
-        method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).default('GET'),
-        body: z.unknown().optional().describe('Request body for POST/PUT/PATCH'),
-        headers: z.record(z.string()).optional().describe('Additional headers'),
+        url: z.string().url().describe("The endpoint URL"),
+        method: z
+          .enum(["GET", "POST", "PUT", "DELETE", "PATCH"])
+          .default("GET"),
+        body: z
+          .unknown()
+          .optional()
+          .describe("Request body for POST/PUT/PATCH"),
+        headers: z.record(z.string()).optional().describe("Additional headers"),
       },
     },
     async ({ url, method, body, headers }) => {
       try {
         const { account, address } = await getWallet();
         const client = createClient(account);
-        const result = await makeRequest(client, url, { method, body, headers });
+        const result = await makeRequest(client, url, {
+          method,
+          body,
+          headers,
+        });
 
         if (!result.success) {
           const errorResponse: Record<string, unknown> = {
@@ -266,7 +338,10 @@ export function registerPaymentTools(server: McpServer): void {
               })),
             };
           }
-          return mcpError(result.error?.message || 'Request failed', errorResponse);
+          return mcpError(
+            result.error?.message || "Request failed",
+            errorResponse
+          );
         }
 
         const response: Record<string, unknown> = {
@@ -292,7 +367,7 @@ export function registerPaymentTools(server: McpServer): void {
 
         return mcpSuccess(response);
       } catch (err) {
-        return mcpError(err, { tool: 'execute_call', url });
+        return mcpError(err, { tool: "execute_call", url });
       }
     }
   );

@@ -2,9 +2,11 @@
  * MCP response helpers
  */
 
+import { formatUnits, parseUnits } from "viem";
+
 export function mcpSuccess<T>(data: T) {
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+    content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
   };
 }
 
@@ -14,10 +16,10 @@ export function mcpError(error: unknown, context?: Record<string, unknown>) {
 
   if (error instanceof Error) {
     message = error.message;
-    if ('cause' in error && error.cause) {
+    if ("cause" in error && error.cause) {
       details = { cause: String(error.cause) };
     }
-  } else if (typeof error === 'string') {
+  } else if (typeof error === "string") {
     message = error;
   } else {
     message = String(error);
@@ -28,18 +30,24 @@ export function mcpError(error: unknown, context?: Record<string, unknown>) {
   if (context) payload.context = context;
 
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+    content: [
+      { type: "text" as const, text: JSON.stringify(payload, null, 2) },
+    ],
     isError: true as const,
   };
 }
 
 /** Format USDC amount from raw units (6 decimals) to USD string */
-export function formatUSDC(amount: bigint): string {
-  return `$${(Number(amount) / 1_000_000).toFixed(2)}`;
+export function formatUSDC(amount: bigint) {
+  return Number(formatUnits(amount, 6)).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    style: "currency",
+    currency: "USD",
+  });
 }
 
 /** Parse USDC amount string to raw units */
-export function parseUSDC(amount: string): bigint {
-  const cleaned = amount.trim().replace(/^\$/, '');
-  return BigInt(Math.round(parseFloat(cleaned) * 1_000_000));
+export function parseUSDC(amount: string) {
+  return parseUnits(amount, 6);
 }
