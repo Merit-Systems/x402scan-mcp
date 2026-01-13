@@ -10,6 +10,7 @@ import { registerAuthTools } from "./tools/auth";
 import { registerWalletTools } from "./tools/wallet";
 
 import { log } from "./log";
+import { getWallet } from "./keystore";
 
 export async function startServer(): Promise<void> {
   log.info("Starting x402scan-mcp...");
@@ -19,12 +20,20 @@ export async function startServer(): Promise<void> {
     version: "0.0.7",
   });
 
-  registerPaymentTools(server);
-  registerAuthTools(server);
-  registerWalletTools(server);
+  // get wallet
+  const account = await getWallet();
+
+  const props = {
+    server,
+    account,
+  };
+
+  registerPaymentTools(props);
+  registerAuthTools(props);
+  registerWalletTools(props);
 
   log.info(
-    "Registered 5 tools: check_balance, query_endpoint, validate_payment, execute_call, authed_call"
+    "Registered 5 tools: check_balance, query_endpoint, execute_call, authed_call"
   );
 
   const transport = new StdioServerTransport();

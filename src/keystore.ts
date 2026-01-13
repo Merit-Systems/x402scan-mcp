@@ -33,7 +33,7 @@ export async function getWallet() {
       process.env.X402_PRIVATE_KEY as `0x${string}`
     );
     log.info(`Using wallet from env: ${account.address}`);
-    return { account, address: account.address, isNew: false };
+    return account;
   }
 
   // Try loading existing
@@ -42,7 +42,7 @@ export async function getWallet() {
     const stored = storedWalletSchema.parse(JSON.parse(data));
     const account = privateKeyToAccount(stored.privateKey);
     log.info(`Loaded wallet: ${account.address}`);
-    return { account, address: account.address, isNew: false };
+    return account;
   } catch {
     // File doesn't exist or is invalid, generate new wallet
   }
@@ -64,7 +64,7 @@ export async function getWallet() {
 
   log.info(`Created wallet: ${account.address}`);
   log.info(`Saved to: ${KEYSTORE_FILE}`);
-  return { account, address: account.address, isNew: true };
+  return account;
 }
 
 /** Check if wallet exists without creating one */
@@ -77,6 +77,3 @@ export async function walletExists(): Promise<boolean> {
     return false;
   }
 }
-
-export const keystorePath = KEYSTORE_FILE;
-export const keystoreDir = KEYSTORE_DIR;

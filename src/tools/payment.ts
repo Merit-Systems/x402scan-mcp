@@ -2,56 +2,24 @@
  * Payment tools - query, validate, execute
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-
-import { z } from "zod";
-
 import { mcpSuccess, mcpError, formatUSDC } from "../response";
-import { getWallet, walletExists } from "../keystore";
 
 import { createClient, makeRequest, queryEndpoint } from "../x402/client";
 
 import { extractV1Schema } from "../x402/protocol";
-import { getChainConfig, getChainName, toCaip2 } from "../networks";
-import { hasSufficientBalance } from "../balance";
+import { getChainName } from "../networks";
+import { requestSchema, requestWithHeadersSchema } from "../schemas";
 
-// Schema accepts both v1 (maxAmountRequired) and v2 (amount) field names
-const PaymentRequirementsSchema = z
-  .object({
-    scheme: z.string(),
-    network: z.string(),
-    amount: z.string().optional(),
-    maxAmountRequired: z.string().optional(),
-    asset: z.string(),
-    payTo: z.string(),
-    maxTimeoutSeconds: z.number(),
-    extra: z.record(z.unknown()).optional(),
-  })
-  .refine((data) => data.amount || data.maxAmountRequired, {
-    message: "Either amount (v2) or maxAmountRequired (v1) must be provided",
-  })
-  .transform((data) => ({
-    ...data,
-    amount: data.amount ?? data.maxAmountRequired!,
-  }));
+import type { RegisterTools } from "./types";
 
-export function registerPaymentTools(server: McpServer): void {
+export const registerPaymentTools: RegisterTools = ({ server, account }) => {
   // query_endpoint - probe for pricing without payment
   server.registerTool(
     "query_endpoint",
     {
       description:
         "Probe an x402-protected endpoint to get pricing and requirements without payment. Returns payment options, Bazaar schema, and Sign-In-With-X auth requirements (x402 v2) if available.",
-      inputSchema: {
-        url: z.string().url().describe("The endpoint URL to probe"),
-        method: z
-          .enum(["GET", "POST", "PUT", "DELETE", "PATCH"])
-          .default("GET"),
-        body: z
-          .unknown()
-          .optional()
-          .describe("Request body for POST/PUT/PATCH"),
-      },
+      inputSchema: requestSchema,
     },
     async ({ url, method, body }) => {
       try {
@@ -169,151 +137,16 @@ export function registerPaymentTools(server: McpServer): void {
     }
   );
 
-  // validate_payment - pre-flight check
-  server.registerTool(
-    "validate_payment",
-    {
-      description:
-        "Pre-flight check if a payment would succeed. Validates wallet, network, and balance.",
-      inputSchema: {
-        requirements: PaymentRequirementsSchema.describe(
-          "Payment requirements from query_endpoint"
-        ),
-      },
-    },
-    async ({ requirements }) => {
-      try {
-        const errors: string[] = [];
-        const warnings: string[] = [];
-        const checks: Record<string, boolean> = {};
-
-        // Check wallet exists (without creating)
-        const hasWallet = await walletExists();
-        checks.walletExists = hasWallet;
-        if (!hasWallet) {
-          errors.push(
-            "No wallet found. Run check_balance first to create a wallet."
-          );
-        }
-
-        // Check network support
-        const caip2 = toCaip2(requirements.network);
-        const chainConfig = getChainConfig(caip2);
-        checks.networkSupported = !!chainConfig;
-        if (!chainConfig) {
-          errors.push(`Network not supported: ${requirements.network}`);
-        }
-
-        // Check scheme support
-        checks.schemeSupported = requirements.scheme === "exact";
-        if (requirements.scheme !== "exact") {
-          errors.push(
-            `Scheme not supported: ${requirements.scheme}. Only 'exact' is supported.`
-          );
-        }
-
-        // Can't check balance without wallet or network
-        if (!hasWallet || !chainConfig) {
-          return mcpSuccess({
-            valid: false,
-            readyToExecute: false,
-            checks,
-            errors,
-            warnings,
-          });
-        }
-
-        // Get wallet for balance check
-        const { address } = await getWallet();
-
-        // Check balance
-        let balanceResult;
-        try {
-          balanceResult = await hasSufficientBalance(
-            address,
-            requirements.amount,
-            caip2
-          );
-          checks.sufficientBalance = balanceResult.sufficient;
-          if (!balanceResult.sufficient) {
-            errors.push(
-              `Insufficient balance. Required: ${formatUSDC(
-                balanceResult.requiredAmount
-              )}, ` + `Available: ${formatUSDC(balanceResult.currentBalance)}`
-            );
-          }
-        } catch (err) {
-          checks.sufficientBalance = false;
-          errors.push(
-            `Failed to check balance: ${
-              err instanceof Error ? err.message : String(err)
-            }`
-          );
-        }
-
-        // Check asset
-        const expectedUsdc = chainConfig.usdcAddress.toLowerCase();
-        checks.assetIsUSDC = expectedUsdc === requirements.asset.toLowerCase();
-        if (!checks.assetIsUSDC) {
-          warnings.push(
-            `Asset may not be USDC. Expected: ${expectedUsdc}, Got: ${requirements.asset}`
-          );
-        }
-
-        checks.signatureCapable = true;
-
-        const valid = errors.length === 0;
-        const response: Record<string, unknown> = {
-          valid,
-          readyToExecute: valid,
-          checks,
-          network: {
-            requested: requirements.network,
-            resolved: caip2,
-            name: getChainName(caip2),
-            supported: true,
-          },
-        };
-
-        if (balanceResult) {
-          response.balance = {
-            current: formatUSDC(balanceResult.currentBalance),
-            required: formatUSDC(balanceResult.requiredAmount),
-            sufficient: balanceResult.sufficient,
-          };
-        }
-
-        if (errors.length > 0) response.errors = errors;
-        if (warnings.length > 0) response.warnings = warnings;
-
-        return mcpSuccess(response);
-      } catch (err) {
-        return mcpError(err, { tool: "validate_payment" });
-      }
-    }
-  );
-
   // execute_call - make paid request
   server.registerTool(
     "execute_call",
     {
       description:
         "Make a paid request to an x402-protected endpoint. Handles 402 payment flow automatically.",
-      inputSchema: {
-        url: z.string().url().describe("The endpoint URL"),
-        method: z
-          .enum(["GET", "POST", "PUT", "DELETE", "PATCH"])
-          .default("GET"),
-        body: z
-          .unknown()
-          .optional()
-          .describe("Request body for POST/PUT/PATCH"),
-        headers: z.record(z.string()).optional().describe("Additional headers"),
-      },
+      inputSchema: requestWithHeadersSchema,
     },
     async ({ url, method, body, headers }) => {
       try {
-        const { account, address } = await getWallet();
         const client = createClient(account);
         const result = await makeRequest(client, url, {
           method,
@@ -356,7 +189,7 @@ export function registerPaymentTools(server: McpServer): void {
             transactionHash: result.settlement.transactionHash,
             network: result.settlement.network,
             networkName: getChainName(result.settlement.network),
-            payer: address,
+            payer: account.address,
             ...(amount && { amountPaid: formatUSDC(BigInt(amount)) }),
           };
         }
@@ -371,4 +204,4 @@ export function registerPaymentTools(server: McpServer): void {
       }
     }
   );
-}
+};

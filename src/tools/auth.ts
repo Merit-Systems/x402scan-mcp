@@ -2,41 +2,39 @@
  * Auth tools - server-driven SIWX authentication
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { mcpSuccess, mcpError } from '../response';
-import { getWallet } from '../keystore';
-import { getParseClient } from '../x402/client';
-import { normalizePaymentRequired } from '../x402/protocol';
+import { mcpSuccess, mcpError } from "../response";
+
+import { getParseClient } from "../x402/client";
+import { normalizePaymentRequired } from "../x402/protocol";
+
 import {
   createSIWxPayload,
   encodeSIWxHeader,
   type SIWxExtensionInfo,
-} from '../vendor/sign-in-with-x/index';
+} from "../vendor/sign-in-with-x/index";
 
-export function registerAuthTools(server: McpServer): void {
+import { requestWithHeadersSchema } from "../schemas";
+
+import type { RegisterTools } from "./types";
+
+export const registerAuthTools: RegisterTools = ({ server, account }) => {
   // authed_call - server-driven SIWX authentication (x402 v2)
   server.registerTool(
-    'authed_call',
+    "authed_call",
     {
-      description: 'Make a request to a SIWX-protected endpoint. Handles auth flow automatically: detects SIWX requirement from 402 response, signs proof with server-provided challenge, retries.',
-      inputSchema: {
-        url: z.string().url().describe('The SIWX-protected endpoint URL'),
-        method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).default('GET').describe('HTTP method'),
-        body: z.unknown().optional().describe('Request body for POST/PUT/PATCH methods'),
-        headers: z.record(z.string()).optional().describe('Additional headers to include'),
-      },
+      description:
+        "Make a request to a SIWX-protected endpoint. Handles auth flow automatically: detects SIWX requirement from 402 response, signs proof with server-provided challenge, retries.",
+      inputSchema: requestWithHeadersSchema,
     },
-    async ({ url, method, body, headers = {} }) => {
+    async ({ url, method, body, headers }) => {
       try {
-        const { account, address } = await getWallet();
         const httpClient = getParseClient();
 
         // Step 1: Make initial request
         const firstResponse = await fetch(url, {
           method,
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
             ...headers,
           },
           body: body ? JSON.stringify(body) : undefined,
@@ -44,12 +42,14 @@ export function registerAuthTools(server: McpServer): void {
 
         // If not 402, return the response directly
         if (firstResponse.status !== 402) {
-          const responseHeaders = Object.fromEntries(firstResponse.headers.entries());
+          const responseHeaders = Object.fromEntries(
+            firstResponse.headers.entries()
+          );
 
           if (firstResponse.ok) {
             let data: unknown;
-            const contentType = firstResponse.headers.get('content-type');
-            if (contentType?.includes('application/json')) {
+            const contentType = firstResponse.headers.get("content-type");
+            if (contentType?.includes("application/json")) {
               data = await firstResponse.json();
             } else {
               data = await firstResponse.text();
@@ -89,38 +89,51 @@ export function registerAuthTools(server: McpServer): void {
         const paymentRequired = normalizePaymentRequired(rawPaymentRequired);
 
         // Step 3: Check for sign-in-with-x extension
-        const siwxExtension = paymentRequired.extensions?.['sign-in-with-x'] as
+        const siwxExtension = paymentRequired.extensions?.["sign-in-with-x"] as
           | { info?: SIWxExtensionInfo }
           | undefined;
 
         if (!siwxExtension?.info) {
-          return mcpError('Endpoint returned 402 but no sign-in-with-x extension found', {
-            statusCode: 402,
-            x402Version: paymentRequired.x402Version,
-            extensions: Object.keys(paymentRequired.extensions || {}),
-            hint: 'This endpoint may require payment instead of authentication. Use execute_call for paid requests.',
-          });
+          return mcpError(
+            "Endpoint returned 402 but no sign-in-with-x extension found",
+            {
+              statusCode: 402,
+              x402Version: paymentRequired.x402Version,
+              extensions: Object.keys(paymentRequired.extensions || {}),
+              hint: "This endpoint may require payment instead of authentication. Use execute_call for paid requests.",
+            }
+          );
         }
 
         const serverInfo = siwxExtension.info;
 
         // Validate required fields
-        const requiredFields = ['domain', 'uri', 'version', 'chainId', 'nonce', 'issuedAt'];
+        const requiredFields = [
+          "domain",
+          "uri",
+          "version",
+          "chainId",
+          "nonce",
+          "issuedAt",
+        ];
         const missingFields = requiredFields.filter(
           (f) => !serverInfo[f as keyof SIWxExtensionInfo]
         );
         if (missingFields.length > 0) {
-          return mcpError('Invalid sign-in-with-x extension: missing required fields', {
-            missingFields,
-            receivedInfo: serverInfo,
-          });
+          return mcpError(
+            "Invalid sign-in-with-x extension: missing required fields",
+            {
+              missingFields,
+              receivedInfo: serverInfo,
+            }
+          );
         }
 
         // Step 4: Check for unsupported chain types
-        if (serverInfo.chainId.startsWith('solana:')) {
-          return mcpError('Solana authentication not supported', {
+        if (serverInfo.chainId.startsWith("solana:")) {
+          return mcpError("Solana authentication not supported", {
             chainId: serverInfo.chainId,
-            hint: 'This endpoint requires a Solana wallet. The MCP server currently only supports EVM wallets.',
+            hint: "This endpoint requires a Solana wallet. The MCP server currently only supports EVM wallets.",
           });
         }
 
@@ -132,14 +145,16 @@ export function registerAuthTools(server: McpServer): void {
         const authedResponse = await fetch(url, {
           method,
           headers: {
-            'Content-Type': 'application/json',
-            'SIGN-IN-WITH-X': siwxHeader,
+            "Content-Type": "application/json",
+            "SIGN-IN-WITH-X": siwxHeader,
             ...headers,
           },
           body: body ? JSON.stringify(body) : undefined,
         });
 
-        const responseHeaders = Object.fromEntries(authedResponse.headers.entries());
+        const responseHeaders = Object.fromEntries(
+          authedResponse.headers.entries()
+        );
 
         if (!authedResponse.ok) {
           let errorBody: unknown;
@@ -148,18 +163,21 @@ export function registerAuthTools(server: McpServer): void {
           } catch {
             errorBody = await authedResponse.text();
           }
-          return mcpError(`HTTP ${authedResponse.status} after authentication`, {
-            statusCode: authedResponse.status,
-            headers: responseHeaders,
-            body: errorBody,
-            authAddress: address,
-          });
+          return mcpError(
+            `HTTP ${authedResponse.status} after authentication`,
+            {
+              statusCode: authedResponse.status,
+              headers: responseHeaders,
+              body: errorBody,
+              authAddress: account.address,
+            }
+          );
         }
 
         // Parse successful response
         let data: unknown;
-        const contentType = authedResponse.headers.get('content-type');
-        if (contentType?.includes('application/json')) {
+        const contentType = authedResponse.headers.get("content-type");
+        if (contentType?.includes("application/json")) {
           data = await authedResponse.json();
         } else {
           data = await authedResponse.text();
@@ -170,14 +188,14 @@ export function registerAuthTools(server: McpServer): void {
           headers: responseHeaders,
           data,
           authentication: {
-            address,
+            address: account.address,
             domain: serverInfo.domain,
             chainId: serverInfo.chainId,
           },
         });
       } catch (err) {
-        return mcpError(err, { tool: 'authed_call', url });
+        return mcpError(err, { tool: "authed_call", url });
       }
     }
   );
-}
+};

@@ -5,7 +5,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { mcpSuccess, mcpError } from "../response";
-import { getWallet, keystorePath } from "../keystore";
 import { getUSDCBalance } from "../balance";
 import {
   DEFAULT_NETWORK,
@@ -15,7 +14,12 @@ import {
   isTestnet,
 } from "../networks";
 
-export function registerWalletTools(server: McpServer): void {
+import type { RegisterTools } from "./types";
+
+export const registerWalletTools: RegisterTools = ({
+  server,
+  account: { address },
+}) => {
   server.registerTool(
     "check_balance",
     {
@@ -24,8 +28,6 @@ export function registerWalletTools(server: McpServer): void {
     },
     async () => {
       try {
-        const { address, isNew } = await getWallet();
-
         try {
           const balance = await getUSDCBalance(address, DEFAULT_NETWORK);
           return mcpSuccess({
@@ -34,8 +36,7 @@ export function registerWalletTools(server: McpServer): void {
             networkName: getChainName(balance.network),
             balanceUSDC: balance.formatted,
             balanceFormatted: balance.formattedString,
-            walletFile: keystorePath,
-            isNewWallet: isNew,
+            isNewWallet: balance.formatted === 0,
             ...(balance.formatted < 1
               ? {
                   fundingInstructions: getFundingInstructions(
@@ -57,8 +58,7 @@ export function registerWalletTools(server: McpServer): void {
             balanceUSDC: null,
             balanceError:
               err instanceof Error ? err.message : "Failed to fetch balance",
-            walletFile: keystorePath,
-            isNewWallet: isNew,
+            isNewWallet: false,
             fundingInstructions: getFundingInstructions(
               address,
               DEFAULT_NETWORK
@@ -70,7 +70,7 @@ export function registerWalletTools(server: McpServer): void {
       }
     }
   );
-}
+};
 
 function getFundingInstructions(
   address: string,

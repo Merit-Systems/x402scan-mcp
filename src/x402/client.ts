@@ -264,17 +264,6 @@ export async function makeRequest<T = unknown>(
   };
 }
 
-export interface QueryResult {
-  success: boolean;
-  statusCode: number;
-  x402Version?: number;
-  paymentRequired?: NormalizedPaymentRequired;
-  error?: string;
-  parseErrors?: string[];
-  rawHeaders?: Record<string, string>;
-  rawBody?: unknown;
-}
-
 /**
  * Query an endpoint for payment requirements without making payment
  */
@@ -285,7 +274,7 @@ export async function queryEndpoint(
     body?: unknown;
     headers?: Record<string, string>;
   } = {}
-): Promise<QueryResult> {
+) {
   const { method = "GET", body, headers = {} } = opts;
   const client = getParseClient();
 
