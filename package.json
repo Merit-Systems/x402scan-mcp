@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.6.1",
+    "@scure/base": "^2.0.0",
     "@x402/core": "^2.0.0",
     "@x402/evm": "^2.0.0",
     "siwe": "^2.3.2",

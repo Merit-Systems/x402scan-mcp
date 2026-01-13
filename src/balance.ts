@@ -2,33 +2,18 @@
  * USDC balance reader
  */
 
-import { createPublicClient, http } from 'viem';
-import { getChain, getUSDCAddress, DEFAULT_NETWORK, toCaip2 } from './networks';
-import { log } from './log';
+import { createPublicClient, http, erc20Abi } from "viem";
 
-const ERC20_ABI = [
-  {
-    inputs: [{ name: 'account', type: 'address' }],
-    name: 'balanceOf',
-    outputs: [{ name: '', type: 'uint256' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
+import { getChain, getUSDCAddress, DEFAULT_NETWORK, toCaip2 } from "./networks";
 
-export interface BalanceResult {
-  balance: bigint;
-  formatted: number;
-  formattedString: string;
-  decimals: number;
-  network: string;
-  usdcAddress: string;
-}
+import { log } from "./log";
+
+import type { Address } from "viem";
 
 export async function getUSDCBalance(
-  address: `0x${string}`,
+  address: Address,
   network: string = DEFAULT_NETWORK
-): Promise<BalanceResult> {
+) {
   const caip2 = toCaip2(network);
   const chain = getChain(caip2);
   const usdcAddress = getUSDCAddress(caip2);
@@ -41,8 +26,8 @@ export async function getUSDCBalance(
   const client = createPublicClient({ chain, transport: http() });
   const balance = await client.readContract({
     address: usdcAddress,
-    abi: ERC20_ABI,
-    functionName: 'balanceOf',
+    abi: erc20Abi,
+    functionName: "balanceOf",
     args: [address],
   });
 
@@ -60,16 +45,14 @@ export async function getUSDCBalance(
 }
 
 export async function hasSufficientBalance(
-  address: `0x${string}`,
+  address: Address,
   requiredAmount: bigint | string,
   network: string = DEFAULT_NETWORK
-): Promise<{
-  sufficient: boolean;
-  currentBalance: bigint;
-  requiredAmount: bigint;
-  shortfall: bigint;
-}> {
-  const required = typeof requiredAmount === 'string' ? BigInt(requiredAmount) : requiredAmount;
+) {
+  const required =
+    typeof requiredAmount === "string"
+      ? BigInt(requiredAmount)
+      : requiredAmount;
   const { balance } = await getUSDCBalance(address, network);
   const sufficient = balance >= required;
 

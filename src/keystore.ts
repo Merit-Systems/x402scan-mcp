@@ -5,40 +5,41 @@
  * Can be overridden via X402_PRIVATE_KEY env var
  */
 
-import { randomBytes } from 'crypto';
-import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
-import * as fs from 'fs/promises';
-import { join } from 'path';
-import { homedir } from 'os';
-import { log } from './log';
+import z from "zod";
 
-const KEYSTORE_DIR = join(homedir(), '.x402scan-mcp');
-const KEYSTORE_FILE = join(KEYSTORE_DIR, 'wallet.json');
+import { randomBytes } from "crypto";
+import * as fs from "fs/promises";
+import { join } from "path";
+import { homedir } from "os";
 
-interface StoredWallet {
-  privateKey: `0x${string}`;
-  address: `0x${string}`;
-  createdAt: string;
-}
+import { privateKeyToAccount } from "viem/accounts";
 
-export interface Wallet {
-  account: PrivateKeyAccount;
-  address: `0x${string}`;
-  isNew: boolean;
-}
+import { log } from "./log";
+import { ethereumAddressSchema, ethereumPrivateKeySchema } from "./schemas";
 
-export async function getWallet(): Promise<Wallet> {
+const KEYSTORE_DIR = join(homedir(), ".x402scan-mcp");
+const KEYSTORE_FILE = join(KEYSTORE_DIR, "wallet.json");
+
+const storedWalletSchema = z.object({
+  privateKey: ethereumPrivateKeySchema,
+  address: ethereumAddressSchema,
+  createdAt: z.string(),
+});
+
+export async function getWallet() {
   // Environment override
   if (process.env.X402_PRIVATE_KEY) {
-    const account = privateKeyToAccount(process.env.X402_PRIVATE_KEY as `0x${string}`);
+    const account = privateKeyToAccount(
+      process.env.X402_PRIVATE_KEY as `0x${string}`
+    );
     log.info(`Using wallet from env: ${account.address}`);
     return { account, address: account.address, isNew: false };
   }
 
   // Try loading existing
   try {
-    const data = await fs.readFile(KEYSTORE_FILE, 'utf-8');
-    const stored: StoredWallet = JSON.parse(data);
+    const data = await fs.readFile(KEYSTORE_FILE, "utf-8");
+    const stored = storedWalletSchema.parse(JSON.parse(data));
     const account = privateKeyToAccount(stored.privateKey);
     log.info(`Loaded wallet: ${account.address}`);
     return { account, address: account.address, isNew: false };
@@ -47,9 +48,9 @@ export async function getWallet(): Promise<Wallet> {
   }
 
   // Generate new
-  const privateKey = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
+  const privateKey = `0x${randomBytes(32).toString("hex")}` as `0x${string}`;
   const account = privateKeyToAccount(privateKey);
-  const stored: StoredWallet = {
+  const stored = {
     privateKey,
     address: account.address,
     createdAt: new Date().toISOString(),

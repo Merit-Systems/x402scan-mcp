@@ -59,7 +59,10 @@ export function extractSolanaChainReference(chainId: string): string {
  * // Issued At: 2024-01-01T00:00:00.000Z"
  * ```
  */
-export function formatSIWSMessage(info: SIWxExtensionInfo, address: string): string {
+export function formatSIWSMessage(
+  info: SIWxExtensionInfo,
+  address: string
+): string {
   const lines: string[] = [
     `${info.domain} wants you to sign in with your Solana account:`,
     address,
@@ -77,7 +80,7 @@ export function formatSIWSMessage(info: SIWxExtensionInfo, address: string): str
     `Version: ${info.version}`,
     `Chain ID: ${extractSolanaChainReference(info.chainId)}`,
     `Nonce: ${info.nonce}`,
-    `Issued At: ${info.issuedAt}`,
+    `Issued At: ${info.issuedAt}`
   );
 
   // Optional fields
@@ -119,7 +122,7 @@ export function formatSIWSMessage(info: SIWxExtensionInfo, address: string): str
 export function verifySolanaSignature(
   message: string,
   signature: Uint8Array,
-  publicKey: Uint8Array,
+  publicKey: Uint8Array
 ): boolean {
   const messageBytes = new TextEncoder().encode(message);
   return nacl.sign.detached.verify(messageBytes, signature, publicKey);
