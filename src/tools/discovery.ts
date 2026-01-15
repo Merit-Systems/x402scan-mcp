@@ -4,8 +4,10 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { mcpSuccess, mcpError } from "../response";
 import { log } from "../log";
+import { mcpError, mcpSuccess, formatUSDC } from "../response";
+import { queryEndpoint } from "../x402/client";
+import { getChainName } from "../networks";
 
 // Discovery document schema per spec
 const DiscoveryDocumentSchema = z.object({
@@ -21,8 +23,22 @@ type DiscoverySource = "well-known" | "dns-txt" | "llms-txt";
 
 interface DiscoveredResource {
   url: string;
-  method: "GET" | "POST";
+  isX402Endpoint?: boolean;
   description?: string;
+  price?: string;
+  priceRaw?: string;
+  network?: string;
+  networkName?: string;
+  x402Version?: number;
+  bazaar?: {
+    info?: unknown;
+    schema?: unknown;
+  };
+  signInWithX?: {
+    required: boolean;
+    info?: unknown;
+  };
+  error?: string;
 }
 
 interface DiscoveryResult {
@@ -282,81 +298,80 @@ async function fetchDiscoveryDocument(origin: string): Promise<FetchResult> {
 }
 
 /**
- * Probe a resource with a specific method to check if it's x402 protected
- * Returns the description if found, or null if not a 402 response
+ * Query a resource URL using the same logic as query_endpoint tool
+ * Returns full pricing, bazaar schema, and SIWX info
  */
-async function probeResource(
-  url: string,
-  method: "GET" | "POST",
-): Promise<{ is402: boolean; description?: string }> {
+async function queryResource(url: string): Promise<DiscoveredResource> {
+  log.debug(`Querying resource: ${url}`);
+
   try {
-    const response = await fetch(url, {
-      method,
-      headers: { Accept: "application/json" },
-    });
+    const result = await queryEndpoint(url, { method: "GET" });
 
-    if (response.status !== 402) {
-      return { is402: false };
+    if (!result.success) {
+      return {
+        url,
+        isX402Endpoint: false,
+        error: result.error || "Failed to query endpoint",
+      };
     }
 
-    // Try to extract description from x402 response
-    let description: string | undefined;
-    try {
-      const body = await response.json();
-      // Check for bazaar extension description
-      if (body?.extensions?.bazaar?.info?.description) {
-        description = body.extensions.bazaar.info.description;
-      }
-    } catch {
-      // Ignore JSON parse errors
+    if (result.statusCode !== 402) {
+      return {
+        url,
+        isX402Endpoint: false,
+      };
     }
 
-    return { is402: true, description };
-  } catch {
-    return { is402: false };
-  }
-}
+    const pr = result.paymentRequired!;
+    const firstReq = pr.accepts[0];
 
-/**
- * Test a resource URL with both GET and POST, return all working methods
- */
-async function testResource(url: string): Promise<DiscoveredResource[]> {
-  log.debug(`Testing resource: ${url}`);
-
-  const [getResult, postResult] = await Promise.all([
-    probeResource(url, "GET"),
-    probeResource(url, "POST"),
-  ]);
-
-  const resources: DiscoveredResource[] = [];
-
-  if (getResult.is402) {
-    resources.push({ url, method: "GET", description: getResult.description });
-  }
-
-  if (postResult.is402) {
-    resources.push({
+    const resource: DiscoveredResource = {
       url,
-      method: "POST",
-      description: postResult.description,
-    });
-  }
+      isX402Endpoint: true,
+      x402Version: pr.x402Version,
+      price: formatUSDC(BigInt(firstReq.amount)),
+      priceRaw: firstReq.amount,
+      network: firstReq.network,
+      networkName: getChainName(firstReq.network),
+    };
 
-  return resources;
+    // Extract bazaar info
+    if (pr.extensions?.bazaar) {
+      const bazaar = pr.extensions.bazaar as { info?: unknown; schema?: unknown };
+      resource.bazaar = { info: bazaar.info, schema: bazaar.schema };
+      // Extract description from bazaar info if available
+      const info = bazaar.info as { description?: string } | undefined;
+      if (info?.description) {
+        resource.description = info.description;
+      }
+    }
+
+    // Extract SIWX info
+    if (pr.extensions?.["sign-in-with-x"]) {
+      const siwx = pr.extensions["sign-in-with-x"] as { info?: unknown };
+      resource.signInWithX = { required: true, info: siwx.info };
+    }
+
+    return resource;
+  } catch (err) {
+    return {
+      url,
+      isX402Endpoint: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 export function registerDiscoveryTools(server: McpServer): void {
   server.registerTool(
     "discover_resources",
     {
-      description:
-        `Discover x402-protected resources from an origin. Fetches the /.well-known/x402 discovery document and optionally tests each resource to get pricing and requirements. 
+      description: `Discover x402-protected resources from an origin. Fetches the /.well-known/x402 discovery document and optionally tests each resource to get pricing and requirements. 
         
         Known default origins with resource packs. Discover if more needed:
-        - https://enrichx402.com -> People search
+        - https://enrichx402.com -> People + Org search, Google Maps (places + locations), grok twitter search, exa web search, clado linkedin data, firecrawl web scrape
         - https://stablestudio.io -> generate images / videos
-        `
-      ,
+        `,
       inputSchema: {
         url: z
           .string()
@@ -366,9 +381,9 @@ export function registerDiscoveryTools(server: McpServer): void {
           ),
         testResources: z
           .boolean()
-          .default(true)
+          .default(false)
           .describe(
-            "Whether to test each discovered resource to get x402 requirements (default: true)",
+            "Whether to query each discovered resource for full pricing/schema info (default: false - just return URLs from discovery doc)",
           ),
         concurrency: z
           .number()
@@ -377,7 +392,7 @@ export function registerDiscoveryTools(server: McpServer): void {
           .max(10)
           .default(5)
           .describe(
-            "Max concurrent requests when testing resources (default: 5)",
+            "Max concurrent requests when querying resources (default: 5)",
           ),
       },
     },
@@ -427,16 +442,15 @@ export function registerDiscoveryTools(server: McpServer): void {
           resources: [],
         };
 
-        // If not testing resources, just return the URLs (no method info)
+        // If not testing resources, just return the URLs from discovery doc
         if (!testResources) {
           result.resources = doc.resources.map((resourceUrl) => ({
             url: resourceUrl,
-            method: "GET" as const, // Unknown - not tested, default to GET
           }));
           return mcpSuccess(result);
         }
 
-        // Test resources with concurrency limit
+        // Query resources with concurrency limit to get full pricing/schema info
         const resourceUrls = doc.resources;
         const allResources: DiscoveredResource[] = [];
 
@@ -444,9 +458,9 @@ export function registerDiscoveryTools(server: McpServer): void {
         for (let i = 0; i < resourceUrls.length; i += concurrency) {
           const batch = resourceUrls.slice(i, i + concurrency);
           const batchResults = await Promise.all(
-            batch.map((resourceUrl) => testResource(resourceUrl)),
+            batch.map((resourceUrl) => queryResource(resourceUrl)),
           );
-          allResources.push(...batchResults.flat());
+          allResources.push(...batchResults);
         }
 
         result.resources = allResources;
