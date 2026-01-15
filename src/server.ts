@@ -5,8 +5,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { log } from './log';
-import { registerPaymentTools } from './tools/payment';
 import { registerAuthTools } from './tools/auth';
+import { registerDiscoveryTools } from './tools/discovery';
+import { registerPaymentTools } from './tools/payment';
 import { registerWalletTools } from './tools/wallet';
 
 export async function startServer(): Promise<void> {
@@ -20,8 +21,9 @@ export async function startServer(): Promise<void> {
   registerPaymentTools(server);
   registerAuthTools(server);
   registerWalletTools(server);
+  registerDiscoveryTools(server);
 
-  log.info('Registered 5 tools: check_balance, query_endpoint, validate_payment, execute_call, authed_call');
+  log.info('Registered 6 tools: check_balance, query_endpoint, validate_payment, execute_call, authed_call, discover_resources');
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
