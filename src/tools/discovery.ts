@@ -82,6 +82,7 @@ function getHostname(origin: string): string {
 async function lookupDnsTxtRecord(hostname: string): Promise<string | null> {
   const dnsQuery = `_x402.${hostname}`;
   log.debug(`Looking up DNS TXT record: ${dnsQuery}`);
+  const clientIdentifierHeaders = await getClientIdentifierHeaders();
 
   try {
     // Use Cloudflare DNS-over-HTTPS
@@ -90,7 +91,7 @@ async function lookupDnsTxtRecord(hostname: string): Promise<string | null> {
         dnsQuery,
       )}&type=TXT`,
       {
-        headers: { Accept: "application/dns-json" },
+        headers: { Accept: "application/dns-json", ...clientIdentifierHeaders },
       },
     );
 
@@ -369,11 +370,11 @@ export function registerDiscoveryTools(server: McpServer): void {
   server.registerTool(
     "discover_resources",
     {
-      description: `Discover x402-protected resources from an origin. Fetches the /.well-known/x402 discovery document and optionally tests each resource to get pricing and requirements. 
-        
+      description: `Discover x402-protected resources from an origin. Fetches the /.well-known/x402 discovery document and optionally tests each resource to get pricing and requirements.
+
         Known default origins with resource packs. Discover if more needed:
         - https://enrichx402.com -> People + Org search, Google Maps (places + locations), grok twitter search, exa web search, clado linkedin data, firecrawl web scrape
-        - https://stablestudio.io -> generate images / videos
+        - https://stablestudio.io -> generate images / videos (default model: nano-banana-pro)
         `,
       inputSchema: {
         url: z
