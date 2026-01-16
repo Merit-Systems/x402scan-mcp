@@ -11,6 +11,10 @@ import * as fs from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import { log } from './log';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json');
 
 const KEYSTORE_DIR = join(homedir(), '.x402scan-mcp');
 const KEYSTORE_FILE = join(KEYSTORE_DIR, 'wallet.json');
@@ -95,7 +99,7 @@ export async function getClientIdentifierHeaders(): Promise<Record<string, strin
   }
 
   return {
-    Referer: 'x402scan-mcp',
+    Referer: `x402scan-mcp/${version}`,
     'X-Wallet-Address': cachedWalletAddress,
   };
 }
