@@ -100,6 +100,7 @@ export async function getClientIdentifierHeaders(): Promise<Record<string, strin
 
   return {
     Referer: `x402scan-mcp/${version}`,
+    'X-Client-ID': cachedWalletAddress,
     'X-Wallet-Address': cachedWalletAddress,
   };
 }
