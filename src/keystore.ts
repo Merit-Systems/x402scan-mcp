@@ -79,3 +79,23 @@ export async function walletExists(): Promise<boolean> {
 
 export const keystorePath = KEYSTORE_FILE;
 export const keystoreDir = KEYSTORE_DIR;
+
+// Cached wallet address for tracking headers (loaded lazily)
+let cachedWalletAddress: `0x${string}` | null = null;
+
+/**
+ * Get tracking headers for x402 requests
+ * Includes Referer and wallet address for provider support
+ */
+export async function getClientIdentifierHeaders(): Promise<Record<string, string>> {
+  // Lazily load wallet address if not cached
+  if (!cachedWalletAddress) {
+    const { address } = await getWallet();
+    cachedWalletAddress = address;
+  }
+
+  return {
+    Referer: 'x402scan-mcp',
+    'X-Wallet-Address': cachedWalletAddress,
+  };
+}

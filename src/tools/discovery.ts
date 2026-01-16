@@ -8,6 +8,7 @@ import { log } from "../log";
 import { mcpError, mcpSuccess, formatUSDC } from "../response";
 import { queryEndpoint } from "../x402/client";
 import { getChainName } from "../networks";
+import { getClientIdentifierHeaders } from "../keystore";
 
 // Discovery document schema per spec
 const DiscoveryDocumentSchema = z.object({
@@ -135,10 +136,11 @@ async function fetchLlmsTxt(
 ): Promise<{ found: boolean; content?: string; error?: string }> {
   const llmsTxtUrl = `${origin}/llms.txt`;
   log.debug(`Fetching llms.txt from: ${llmsTxtUrl}`);
+  const clientIdentifierHeaders = await getClientIdentifierHeaders();
 
   try {
     const response = await fetch(llmsTxtUrl, {
-      headers: { Accept: "text/plain" },
+      headers: { Accept: "text/plain", ...clientIdentifierHeaders },
     });
 
     if (!response.ok) {
@@ -184,10 +186,11 @@ async function fetchDiscoveryFromUrl(url: string): Promise<{
   rawResponse?: unknown;
 }> {
   log.debug(`Fetching discovery document from: ${url}`);
+  const clientIdentifierHeaders = await getClientIdentifierHeaders();
 
   try {
     const response = await fetch(url, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...clientIdentifierHeaders },
     });
 
     if (!response.ok) {
