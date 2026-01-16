@@ -10,6 +10,7 @@ import { registerExactEvmScheme } from '@x402/evm/exact/client';
 import type { PaymentRequired, PaymentPayload } from '@x402/core/types';
 import { log } from '../log';
 import { toCaip2 } from '../networks';
+import { getClientIdentifierHeaders } from '../keystore';
 import { normalizePaymentRequired, type NormalizedPaymentRequired } from './protocol';
 
 export type { NormalizedPaymentRequired, NormalizedRequirement } from './protocol';
@@ -70,6 +71,7 @@ export async function makeRequest<T = unknown>(
   opts: RequestOptions = {}
 ): Promise<RequestResult<T>> {
   const { method = 'GET', body, headers = {} } = opts;
+  const clientIdentifierHeaders = await getClientIdentifierHeaders();
 
   // Phase 1: Initial request
   log.debug(`Making initial request: ${method} ${url}`);
@@ -78,7 +80,7 @@ export async function makeRequest<T = unknown>(
   try {
     firstResponse = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', ...headers },
+      headers: { 'Content-Type': 'application/json', ...clientIdentifierHeaders, ...headers },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (err) {
@@ -163,7 +165,7 @@ export async function makeRequest<T = unknown>(
   try {
     paidResponse = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', ...paymentHeaders, ...headers },
+      headers: { 'Content-Type': 'application/json', ...clientIdentifierHeaders, ...paymentHeaders, ...headers },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (err) {
@@ -233,12 +235,13 @@ export async function queryEndpoint(
 ): Promise<QueryResult> {
   const { method = 'GET', body, headers = {} } = opts;
   const client = getParseClient();
+  const clientIdentifierHeaders = await getClientIdentifierHeaders();
 
   let response: Response;
   try {
     response = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', ...headers },
+      headers: { 'Content-Type': 'application/json', ...clientIdentifierHeaders, ...headers },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (err) {

@@ -11,6 +11,10 @@ import * as fs from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import { log } from './log';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json');
 
 const KEYSTORE_DIR = join(homedir(), '.x402scan-mcp');
 const KEYSTORE_FILE = join(KEYSTORE_DIR, 'wallet.json');
@@ -79,3 +83,24 @@ export async function walletExists(): Promise<boolean> {
 
 export const keystorePath = KEYSTORE_FILE;
 export const keystoreDir = KEYSTORE_DIR;
+
+// Cached wallet address for tracking headers (loaded lazily)
+let cachedWalletAddress: `0x${string}` | null = null;
+
+/**
+ * Get tracking headers for x402 requests
+ * Includes Referer and wallet address for provider support
+ */
+export async function getClientIdentifierHeaders(): Promise<Record<string, string>> {
+  // Lazily load wallet address if not cached
+  if (!cachedWalletAddress) {
+    const { address } = await getWallet();
+    cachedWalletAddress = address;
+  }
+
+  return {
+    Referer: `x402scan-mcp/${version}`,
+    'X-Client-ID': cachedWalletAddress,
+    'X-Wallet-Address': cachedWalletAddress,
+  };
+}

@@ -5,7 +5,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { mcpSuccess, mcpError } from '../response';
-import { getWallet } from '../keystore';
+import { getWallet, getClientIdentifierHeaders } from '../keystore';
 import { getParseClient } from '../x402/client';
 import { normalizePaymentRequired } from '../x402/protocol';
 import {
@@ -31,12 +31,14 @@ export function registerAuthTools(server: McpServer): void {
       try {
         const { account, address } = await getWallet();
         const httpClient = getParseClient();
+        const clientIdentifierHeaders = await getClientIdentifierHeaders();
 
         // Step 1: Make initial request
         const firstResponse = await fetch(url, {
           method,
           headers: {
             'Content-Type': 'application/json',
+            ...clientIdentifierHeaders,
             ...headers,
           },
           body: body ? JSON.stringify(body) : undefined,
@@ -133,6 +135,7 @@ export function registerAuthTools(server: McpServer): void {
           method,
           headers: {
             'Content-Type': 'application/json',
+            ...clientIdentifierHeaders,
             'SIGN-IN-WITH-X': siwxHeader,
             ...headers,
           },
