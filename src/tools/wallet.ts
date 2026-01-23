@@ -5,8 +5,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { mcpSuccess, mcpError } from '../response';
 import { getWallet, keystorePath } from '../keystore';
-import { getUSDCBalance } from '../balance';
 import { DEFAULT_NETWORK, getChainName, getExplorerUrl, getUSDCAddress, isTestnet } from '../networks';
+import { ScanClient, type ScanBalanceResult } from '../scan/client';
 
 export function registerWalletTools(server: McpServer): void {
   server.registerTool(
@@ -18,9 +18,13 @@ export function registerWalletTools(server: McpServer): void {
       try {
         const { address, isNew } = await getWallet();
 
-        let balance;
+        let result: ScanBalanceResult;
         try {
-          balance = await getUSDCBalance(address, DEFAULT_NETWORK);
+          const scanClient = new ScanClient(process.env.SCAN_URL!);
+          result = await scanClient.getBalance(address);
+          if (!result.success) {
+            return mcpError(result.error!, { tool: 'check_balance' });
+          }
         } catch (err) {
           return mcpSuccess({
             address,
@@ -34,20 +38,22 @@ export function registerWalletTools(server: McpServer): void {
           });
         }
 
+        const data = result.data;
+
         const response: Record<string, unknown> = {
           address,
-          network: balance.network,
-          networkName: getChainName(balance.network),
-          balanceUSDC: balance.formatted,
-          balanceFormatted: balance.formattedString,
+          network: data?.chain,
+          networkName: getChainName(data?.chain.toString() ?? ''),
+          balanceUSDC: data?.balance,
+          balanceFormatted: Number(data?.balance).toFixed(2),
           walletFile: keystorePath,
           isNewWallet: isNew,
         };
 
-        if (balance.formatted < 1) {
-          response.fundingInstructions = getFundingInstructions(address, balance.network);
+        if (data?.balance && Number(data.balance) < 1) {
+          response.fundingInstructions = getFundingInstructions(address, data?.chain.toString() ?? '');
           response.suggestion =
-            balance.formatted === 0
+            Number(data?.balance) === 0
               ? 'Your wallet has no USDC. Send USDC to the address above to start making paid API calls.'
               : 'Your balance is low. Consider topping up.';
         }
