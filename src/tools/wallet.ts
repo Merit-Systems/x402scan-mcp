@@ -42,8 +42,8 @@ export function registerWalletTools(server: McpServer): void {
 
         const response: Record<string, unknown> = {
           address,
-          network: data?.chain,
-          networkName: getChainName(data?.chain.toString() ?? ''),
+          network: DEFAULT_NETWORK,
+          networkName: getChainName(DEFAULT_NETWORK),
           balanceUSDC: data?.balance,
           balanceFormatted: Number(data?.balance).toFixed(2),
           walletFile: keystorePath,
