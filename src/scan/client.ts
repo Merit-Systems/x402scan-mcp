@@ -16,11 +16,8 @@ const ScanBalanceResponseSchema = z.object({
 
 export interface ScanBalanceResult {
   success: boolean;
-  statusCode: number;
-  url: string;
   data?: ScanBalanceResponse;
   error?: string;
-  rawText?: string;
 }
 
 export class ScanClient {
@@ -34,7 +31,7 @@ export class ScanClient {
     const url = new URL(`/api/rpc/balance/${encodeURIComponent(address)}`, this.baseUrl).toString();
 
     if (!address || typeof address !== 'string') {
-      return { success: false, statusCode: 0, url, error: 'Invalid address: expected non-empty string' };
+      return { success: false, error: 'Invalid address: expected non-empty string' };
     }
 
     let res: Response;
@@ -43,20 +40,14 @@ export class ScanClient {
     } catch (err) {
       return {
         success: false,
-        statusCode: 0,
-        url,
         error: `Network error: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
 
     if (!res.ok) {
-      const rawText = await res.text().catch(() => '');
       return {
         success: false,
-        statusCode: res.status,
-        url,
         error: `HTTP ${res.status}`,
-        rawText,
       };
     }
 
@@ -64,21 +55,17 @@ export class ScanClient {
     try {
       json = await res.json();
     } catch {
-      const rawText = await res.text().catch(() => '');
-      return { success: false, statusCode: res.status, url, error: 'Invalid JSON response', rawText };
+      return { success: false, error: 'Invalid JSON response' };
     }
 
     const parsed = ScanBalanceResponseSchema.safeParse(json);
     if (!parsed.success) {
       return {
         success: false,
-        statusCode: res.status,
-        url,
         error: 'Unexpected response shape from balance endpoint',
-        rawText: JSON.stringify({ issues: parsed.error.issues }),
       };
     }
 
-    return { success: true, statusCode: res.status, url, data: parsed.data };
+    return { success: true, data: parsed.data };
   }
 }
