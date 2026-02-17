@@ -19,6 +19,12 @@ export function mcpError(error: unknown, context?: Record<string, unknown>) {
     }
   } else if (typeof error === 'string') {
     message = error;
+  } else if (typeof error === 'object' && error !== null) {
+    try {
+      message = JSON.stringify(error);
+    } catch {
+      message = Object.prototype.toString.call(error);
+    }
   } else {
     message = String(error);
   }
